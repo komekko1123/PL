@@ -87,6 +87,8 @@ string addBinary(string a, string b) {
     
 int main(){
   cout << "123141242" << endl;	
+  cout << "d";
+  cout << "testc";
   // printf("1231231231231231Error!n\n");
   return 0;
 } // main
