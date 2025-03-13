@@ -8,8 +8,27 @@
 #include <map> 
 #include <stdexcept> //錯誤處理
 #include <iomanip> // for std::setprecision
-
+#include <ctype.h> // 用來看symbol是否可Print
 using namespace std;
+
+
+bool isNumber(char c){
+  if( c >= '0' && c <= '9' )
+    return true;
+  else 
+    return false;
+} // isNumber()
+
+bool isSymbolCharacter(char c){
+  if ( c == ' ' || c == '\t' || c == '\n' || c == '\'' || c == '\"' || c == '(' || c == ')' || c == ';' || isNumber(c) ) // whitespace and illegal character
+    return false;
+  if( isprint(c) ) // c的函數庫，用來看可不可print
+    return true;
+  else
+    return false;
+} // isSymbol
+
+
 
 enum tokenType{
   LP, // ()
@@ -21,10 +40,39 @@ enum tokenType{
   NIL, // nil or #f 但是NIL,nIL不能
   T,  // 't' or '#t' 但是 'T', '#T'不能
   QUOTE, // '
-  SYMBOL, 
-  EOF, // EOF類別
-  ERROR, // Error
+  SYM, 
+  ERR, // Error
 };
+
+enum SexpType{
+  Number,
+  SYMBOL,
+  ERROR,
+  FUNCTION,
+  LIST,
+};
+/*
+// Token
+  LEFT-PAREN       // '('
+  RIGHT-PAREN      // ')'
+  INT              // e.g., '123', '+123', '-123'
+  STRING           // "string's (example)." (strings do not extend across lines)
+  DOT              // '.'
+  FLOAT            // '123.567', '123.', '.567', '+123.4', '-.123'
+  NIL              // 'nil' or '#f', but not 'NIL' nor 'nIL'
+  T                // 't' or '#t', but not 'T' nor '#T'
+  QUOTE            // '
+  SYMBOL
+<S-exp> ::= <ATOM> 
+            | LEFT-PAREN <S-exp> { <S-exp> } [ DOT <S-exp> ] RIGHT-PAREN
+            | QUOTE <S-exp>
+            
+<ATOM>  ::= SYMBOL | INT | FLOAT | STRING 
+            | NIL | T | LEFT-PAREN RIGHT-PAREN
+
+<ATOM> = SYMBOL | NUMBER | NIL AND T STRING | ()
+*/
+
 
 
 class Token {
@@ -41,7 +89,7 @@ public:
   } // Token()
 
   
-  Token(tokenType type,string mvalue, int mline, int mcolumn){
+  Token(tokenType type,string value, int line, int column){
     mtype = type;
     mvalue = value;
     mline = line;
@@ -61,19 +109,19 @@ class Scanner {
   Scanner(){
     m_havePeek = false;
     mline = 1;
-    mcolmun = 1;
+    mcolumn = 1;
   } // Scanner()
 
   char getTheChar(){ // 要這個function是因為getchar時要更新line跟column，很多地方到要用到。
     char c = cin.get();
     if( c == '\n'){
-      line = line + 1;
-      column = 1;
+      mline = mline + 1;
+      mcolumn = 1;
     } // if
 
     else
-      column = column + 1;
-    return c
+      mcolumn = mcolumn + 1;
+    return c;
     // getChar()怕跟getChar 撞到取getTheChar()
   } // getTheChar()
 
@@ -112,23 +160,33 @@ class Scanner {
       mpeekToken = scanToken();
       m_havePeek = true;
     } // if
+
+    return mpeekToken;
   } // peekToken()
 
   Token scanToken(){
-    skipWhiteSpace(); // 先跳過空白的Token
+    skipWhiteSpaceAndComment(); // 先跳過空白的Token
     int sline = mline; // start的line和column
     int scolumn = mcolumn; 
     if( cin.eof() == true )
-      return Token(EOF, "EOF1" , sline , scolumn );
+      return Token(ERR, "EOF1" , sline , scolumn );
     char c = getTheChar();
     string str;
-    if( c == '(' )
+    str = str + c; //先加入
+    char nextchar = cin.peek(); //先PEEK
+
+    if( c == '(' ){ // ( 左刮要peek下一個是不是右刮)
+      if( nextchar == ')'){
+        c = getTheChar(); // 左右刮是NIL
+        return Token(NIL, "()", sline, scolumn);
+      } // if
       return Token(LP, "(", sline, scolumn);
+    } // if
     else if( c == ')' )
       return Token(RP, ")", sline, scolumn);
     else if( c == '\'')
       return Token(QUOTE, "'", sline, scolumn);
-    else if( c == '\"'){ // 雙括是字串
+    else if( c == '\"'){ // 雙括是字串***********\n要的話要throw error嗎
       str = str + c;
       bool closed = false;
       while( cin.good() ){
@@ -169,21 +227,20 @@ class Scanner {
       } // while
 
       if ( closed == false ) // eof因為沒有"
-        return Token(EOF, "EOF2" , mline , mcolumn );
+        return Token(ERR, "EOF2", mline , mcolumn );
       else
         return Token(STRING, str, sline, scolumn );
     } // else if
 
     else if( isNumber(c)  || c == '+' || c == '-' || c == '.' ){ // 數字相關，要peek下一個token
-      str = str + c;
-      char nextchar = cin.peek();
       bool haveDot = false;
       bool haveNumber = false;
+      bool haveSym = false;
       if ( c == '.')
         haveDot = true;
       if ( isNumber(c) )
         haveNumber = true;
-      while( cin.good() ){
+      while( cin.good() ){  
         if ( isNumber( nextchar ) ){
           haveNumber = true;
           c = getTheChar();
@@ -193,34 +250,62 @@ class Scanner {
           c = getTheChar();
         } // else if
 
-        else
+        else if (  isSymbolCharacter(nextchar) ){ // +-號且遇到非兩者的token代表著這是symbol
+          haveSym = true;
+          while( isSymbolCharacter(nextchar) ) {// 可以add進去
+            c = getTheChar();
+            str = str + c;
+            nextchar = cin.peek();
+          } // while
+          break;
+        } // else if 
+        else 
           break;
         str = str + c;
-        char nextchar = cin.peek();
+        nextchar = cin.peek();
       } // while
 
-      if ( (str == "+" || s == "-") &&  haveNumber == false ) //+. -. ,+ -都是 
-        return Token(SYMBOL, str, sline)
-      else if ( haveDot == true && haveNumber == true )
-        return Token(FLOAT, str, sline, scolumn);
-      else if( haveDot == true && haveNumber == false )
+      if( str == "." && haveDot == true && haveNumber == false ) // only dot
         return Token(DOT, ".", sline, scolumn);
-      else if ( haveDot == false && haveNumber == true )
+      else if ( haveDot == true && haveNumber == true && haveSym == false )  //有福點數
+        return Token(FLOAT, str, sline, scolumn);
+      else if ( haveDot == false && haveNumber == true && haveSym == false ) // 只有數字
         return Token(INT, str, sline, scolumn);
-      else if ( ) //加減開頭且下一個沒有數字跟dot
-    } // if
+      else // 其他的應該都是symbol
+        return Token(SYM, str, sline, scolumn);
+    } // else if
+
+    else if( isSymbolCharacter( c ) ){ // symbol的條件
+      while( isSymbolCharacter(nextchar) ) {// 可以add進去
+        c = getTheChar();
+        str = str + c;
+        nextchar = cin.peek();
+      } // while  
+
+      if( str == "#f" || str == "nil" )
+        return Token(NIL, str, sline, scolumn);
+      else if( str == "" )
+
+      else if( str == "" )
+    } // else if
+
+    else {
+      str = str + " is the UNRECOGNIZE TOKEN(Error)";
+      return Token(ERR, str, sline, scolumn);
+    } // else 
   } // scanToken()
 
 }; // Scanner
   
-bool isNumber(char c){
-  if( c >= '0' && c <= '9' )
-    return true;
-  else 
-    return false;
-} // isNumber()
 
 int main(){
+  int utestnum = 0;
+  char ch = '\0';
+  cin >> utestnum; // read testnum
+  cin >> ch; // read \n
+  while( true ){
+    break;
+  } // 
   cout << "Welcome to OurScheme!" << endl << "> ";	
   return 0;
 } // main
