@@ -1,16 +1,19 @@
 // 啟航日3/5 pj1
-// 完成日
+// 完成日3/16 pj1
 #include <stdio.h>
 #include <iostream>
 #include <vector>
 #include <string>
 #include <sstream>
 #include <map> 
-#include <stdexcept> //錯誤處理
-#include <iomanip> // for std::setprecision
+#include <exception> //錯誤處理
+#include <iomanip> // for setprecision(cout到小數第三位)
 #include <ctype.h> // 用來看symbol是否可Print
+#include <cstdlib>   // for atoi 和 atof
 using namespace std;
-
+class Sexp;
+class SexpError;
+typedef Sexp (*FUNCTIONPTR)(const vector<Sexp>&);
 
 bool isNumber(char c){
   if( c >= '0' && c <= '9' )
@@ -20,7 +23,7 @@ bool isNumber(char c){
 } // isNumber()
 
 bool isSymbolCharacter(char c){
-  if ( c == ' ' || c == '\t' || c == '\n' || c == '\'' || c == '\"' || c == '(' || c == ')' || c == ';' || isNumber(c) ) // whitespace and illegal character
+  if ( c == ' ' || c == '\t' || c == '\n' || c == '\'' || c == '\"' || c == '(' || c == ')' || c == ';' ) // whitespace and illegal character
     return false;
   if( isprint(c) ) // c的函數庫，用來看可不可print
     return true;
@@ -30,7 +33,9 @@ bool isSymbolCharacter(char c){
 
 
 
+
 enum tokenType{
+  NOP, // NOTYPE
   LP, // ()
   RP, // )
   INT, // '123', +123 , -123
@@ -45,7 +50,7 @@ enum tokenType{
 };
 
 enum SexpType{
-  Number,
+  NUMBER,
   SYMBOL,
   ERROR,
   FUNCTION,
@@ -77,31 +82,101 @@ enum SexpType{
 
 class Token {
 public:
-  tokenType mtype;  
-  string mvalue;
-  int m_num;
-  float mf_num;
+  tokenType type;  
+  string value;
+  int num;
+  float f_num;
   bool m_bool;
   int mline;
   int mcolumn;
   Token(){
-
   } // Token()
 
   
-  Token(tokenType type,string value, int line, int column){
-    mtype = type;
-    mvalue = value;
+  Token(tokenType typeE,string valueE, int line, int column){
+    type = typeE;
+    value = valueE;
     mline = line;
     mcolumn = column;
     if( type == INT )
-      m_num = atoi( value.c_str() );
+      this->num = atoi( value.c_str() );
     else if( type == FLOAT )
-      mf_num = atof( value.c_str() );
+     this->f_num = atof( value.c_str() );
   } // Token()
 }; // Token
 
+
+
+class Sexp{
+public:
+  SexpType type;  
+  tokenType mtype;
+  string value;
+  double number;
+  vector<Sexp> Slist;
+  FUNCTIONPTR funptr;
+  Sexp(){}
+  Sexp(SexpType Stype, string theValue ){} //可能會用到
+  Sexp(SexpType Stype, vector<Sexp> theList){
+    type = Stype;
+    Slist = theList;
+  } // LIST的模式
+
+  Sexp(SexpType Stype, FUNCTIONPTR fptr){
+    Stype = FUNCTION;
+    funptr = fptr;
+  } // 指向函數指標
+
+  Sexp(SexpType Stype, tokenType theMtype,string theValue ){ // 感覺應該想好再寫的
+    type = Stype;
+    value = theValue;
+    mtype = theMtype;
+    if( mtype == INT || mtype == FLOAT ) 
+      number = atof(value.c_str()); // 架構怪了atof
+    //其他默認symbol
+  } // Sexp()
+
+
+}; // Sexp
+
+class ErrorCondition : public exception {
+  public:
+      Sexp SexpErr;
+      Token tErr;
+      int line;
+      int column;
+      int errornum;
+      ErrorCondition( Token t, Sexp Exp, int err, int l, int c){
+        line = l;
+        column = c;
+        errornum = err;
+        SexpErr = Exp;
+        tErr = t;
+      } // ErrorCondition
+
+      void PrintError(){
+        if( tErr.mline == 0 )
+          tErr.mline = 1;
+        if ( errornum == 1)
+          cout << "ERROR (no more input) : END-OF-FILE encountered";
+        else if ( errornum == 2 ){
+          cout << "ERROR (no closing quote) : END-OF-LINE encountered at Line "<< tErr.mline << " Column " << tErr.mcolumn << endl;
+        } // else if
+        else if ( errornum == 3 ){
+          cout << "ERROR (unexpected token) : atom or '(' expected when token at Line "<< tErr.mline << " Column " << tErr.mcolumn  << " is >>" << tErr.value << "<<" << endl;
+        } // else if
+        else if ( errornum == 4){
+          cout << "ERROR (unexpected token) : ')' expected when token at Line "<< tErr.mline << " Column " << tErr.mcolumn  << " is >>" << tErr.value << "<<" << endl;
+        } // else if
+        else if ( errornum == 5)
+          cout << "test error";
+      } // PrintError
+
+      
+  };
+
 class Scanner {
+public:
   bool m_havePeek;
   Token mpeekToken;
   int mline;
@@ -112,7 +187,31 @@ class Scanner {
     mcolumn = 1;
   } // Scanner()
 
+  void clear(){ //遇到error了之類的
+    mpeekToken = Token();
+    mline = 0;
+    mcolumn = 1;
+    char c = '\0';
+    while( cin.good() ){ // cin,good的是可以讀的輸入，型別也同
+      char c = cin.peek();
+      if ( c == '\n'  ) // 換行就是正常狀況
+        break; // 等同getchar()
+      else if ( c == ';' ) // 註解就換行不會有奇怪狀況
+        break;
+      else if ( c == ' ' || c == '\t'){ // 這是要看是不是同一個的奇怪狀況
+        getTheChar();
+      } // else if
+      else { // 有token怪怪的，mline要是1開頭
+        mline = 1;
+        break;
+      } // else 
+    } // while
+    m_havePeek = false;
+  } // clear
+
   char getTheChar(){ // 要這個function是因為getchar時要更新line跟column，很多地方到要用到。
+    if ( cin.eof() )
+      throw ErrorCondition(Token(),Sexp(),1,0,0);
     char c = cin.get();
     if( c == '\n'){
       mline = mline + 1;
@@ -152,9 +251,10 @@ class Scanner {
 
     else
       t = scanToken();
+
     return t;
   } // getToken()
-  
+
   Token peekToken(){
     if ( m_havePeek == false ){
       mpeekToken = scanToken();
@@ -169,13 +269,15 @@ class Scanner {
     int sline = mline; // start的line和column
     int scolumn = mcolumn; 
     if( cin.eof() == true )
-      return Token(ERR, "EOF1" , sline , scolumn );
+      throw ErrorCondition(Token(),Sexp(),1,0,0);
     char c = getTheChar();
     string str;
     str = str + c; //先加入
     char nextchar = cin.peek(); //先PEEK
 
     if( c == '(' ){ // ( 左刮要peek下一個是不是右刮)
+      skipWhiteSpaceAndComment();
+      nextchar = cin.peek(); //先PEEK
       if( nextchar == ')'){
         c = getTheChar(); // 左右刮是NIL
         return Token(NIL, "()", sline, scolumn);
@@ -187,12 +289,12 @@ class Scanner {
     else if( c == '\'')
       return Token(QUOTE, "'", sline, scolumn);
     else if( c == '\"'){ // 雙括是字串***********\n要的話要throw error嗎
-      str = str + c;
       bool closed = false;
-      while( cin.good() ){
+      while( nextchar != '\n' ){ // 如果遇到換行的話
         char c = getTheChar();
         if ( c == '\"' ){
           closed = true;
+          str = str + c ;
           break;
         } // if
 
@@ -200,7 +302,7 @@ class Scanner {
           char nextchar = cin.peek(); // 要看下一個是不是4個char，不是就是/
           if ( nextchar == '\\' ){
             getTheChar();
-            str = str + "\\\\";
+            str = str + "\\";
           } // if
 
           else if( nextchar == 'n' ){
@@ -215,7 +317,7 @@ class Scanner {
 
           else if( nextchar == '\"' ){
             getTheChar();
-            str = str + "\\\"";
+            str = str + "\"";
           } // else if
 
           else
@@ -224,10 +326,13 @@ class Scanner {
 
         else
           str = str + c;
+        nextchar = cin.peek();
       } // while
 
-      if ( closed == false ) // eof因為沒有"
-        return Token(ERR, "EOF2", mline , mcolumn );
+      if ( closed == false ){ // eof因為沒有"
+        Token errortoken = Token(ERR, "HELLO", mline , mcolumn );
+        throw ErrorCondition(errortoken, Sexp(), 2, mline, mcolumn);
+      } // if
       else
         return Token(STRING, str, sline, scolumn );
     } // else if
@@ -284,30 +389,338 @@ class Scanner {
 
       if( str == "#f" || str == "nil" )
         return Token(NIL, str, sline, scolumn);
-      else if( str == "" )
-
-      else if( str == "" )
+      else if( str == "#t" || str == "t" )
+        return Token(T, str, sline, scolumn);
+      else
+        return Token(SYM, str, sline, scolumn);
     } // else if
 
     else {
-      str = str + " is the UNRECOGNIZE TOKEN(Error)";
-      return Token(ERR, str, sline, scolumn);
+      str = str + " is the UNRECOGNIZE TOKEN(Error)"; // 應該是不會有這種情況
+      Token terr = Token(ERR, str, sline, scolumn);
+      throw ErrorCondition(terr,Sexp(),0,mline, mcolumn);
     } // else 
   } // scanToken()
 
+
+  void encounterError(){
+    char c = cin.peek();
+    while( cin.good() ){ // cin,good的是可以讀的輸入，型別也同
+      char c = cin.peek();
+      if ( c != '\n'  ) // until read the \n
+        getTheChar(); // 等同getchar()
+      else
+        break;
+    } // while  
+  } // encounterError()
+
 }; // Scanner
   
+class Parser{
+public:
+  Scanner *sc;
+  vector<Token> tokenlist;
+  vector<Sexp> SexpList;  
+  int index; // index to final token
+  
+  Parser(Scanner *scaner){
+    sc = scaner;
+    index = 0;
+  } // Parser
+
+  void getTokenToList(){
+    Token t  = sc->getToken();
+    if( tokenlist.size() == 0 )
+      index = 0; 
+    else
+      index++;
+    tokenlist.push_back(t);
+  } // getTokenToList
+
+  void startParsing(){
+    this->clear();  
+    getTokenToList();
+    int i = 0;
+    Sexp sexpToken;
+    if ( isSExp() == true){
+      sexpToken = changeToSexpList(i);
+      SexpList.push_back(sexpToken);
+    } // if
+    else
+      throw ErrorCondition(Token(),Sexp(),0,0, 0);
+    
+  } // startParsing
+
+  bool isSExp(){ // 寫完才發現不用BOOL
+    if ( tokenlist[index].type == LP ){
+
+      getTokenToList();
+      isSExp();
+      getTokenToList();
+      while( true){
+        if ( tokenlist[index].type == DOT ){
+          getTokenToList(); // 
+          isSExp();
+          getTokenToList(); // 拿右括
+          if ( tokenlist[index].type != RP ){
+            Token terr = tokenlist[index];
+            terr.type = ERR;
+            throw ErrorCondition(terr,Sexp(),4,terr.mline, terr.mcolumn);  // 沒有右瓜的UNEXPECTED TOKEN
+          } // if
+          
+          return true; //有右刮就是合格語法
+        } // if
+
+        else if ( tokenlist[index].type == RP )
+          return true;
+        else {
+          isSExp();  
+          getTokenToList();
+        } // else
+      } // while
+      return true;
+    } // if
+
+    else if( tokenlist[index].type == QUOTE ){
+      getTokenToList(); // quote接一個token去做Sexp(遞迴)
+      isSExp(); // 發現到用throw error好像就不用if了  
+    } // else if
+
+    else if( tokenlist[index].type == SYM || tokenlist[index].type == INT || tokenlist[index].type == FLOAT
+       || tokenlist[index].type == STRING || tokenlist[index].type == NIL || tokenlist[index].type == T ){ // 這條長長的是Atom
+      return true;
+    } // else if
+
+    else { // unexpect token了      
+      Token terr = tokenlist[index];
+      terr.type = ERR;
+      throw ErrorCondition(terr,Sexp(),3,terr.mline, terr.mcolumn);
+    } // else
+     
+    return true;
+  } // isSExp
+
+
+  Sexp changeToSexpList(int &loc){
+    if( ( loc > index ) || tokenlist.size() == 0 )
+      throw ErrorCondition(Token(),Sexp(),5,0, 0);
+    Token t = tokenlist[loc];
+    loc = loc + 1;
+    Sexp s;
+    s.mtype = t.type;
+    s.value = t.value;
+    if( t.type == QUOTE){ // '的定義是(quote Sexp)所以就先抓個sexp然後再把quote和sexp放入成list這樣
+      Sexp innerSexp = changeToSexpList(loc);
+      s.type = SYMBOL;
+      vector<Sexp> sslist;
+      sslist.push_back(s);
+      sslist.push_back(innerSexp);
+      return Sexp(LIST,sslist);
+    } // if
+
+    else if ( t.type == LP){
+      vector<Sexp> sslist;
+      Sexp backSexp;
+
+      bool haveDot = false;
+      Sexp dotSexp;
+      dotSexp.type = SYMBOL;
+      dotSexp.mtype = DOT;
+      dotSexp.value = ".";
+
+
+      while( loc < tokenlist.size() && tokenlist[loc].type != RP ){
+        if( tokenlist[loc].type == DOT ){
+          if( sslist.size() == 0){ // 實際上應該不會有這個問題，因為已經parser完了
+            throw ErrorCondition(Token(),Sexp(),4,2002,1123);
+          } // if
+          
+          loc = loc + 1; //去除DOT
+          haveDot = true;
+
+          backSexp = changeToSexpList( loc );
+          if (tokenlist[loc].type != RP )  // 正常來講肯定要是這個元素，且確定文法寫走不到這。
+            throw ErrorCondition(Token(),Sexp(),4,9999,8888);
+          break;
+        } // if
+
+        Sexp innerSexp = changeToSexpList(loc);
+        sslist.push_back( innerSexp );
+      } // while
+
+      loc = loc + 1; // 去除右刮號
+
+      if ( haveDot == true){
+        if ( backSexp.type == LIST ){ // 存LIST( 第三題的錯誤可能是這，要把list的內容全部拉進來..pretty print真的問題一堆)
+          for( int i = 0 ; i < backSexp.Slist.size(); i++){
+            Sexp temp = backSexp.Slist[i];
+            sslist.push_back(temp);
+          } // for   
+          return Sexp(LIST,sslist);
+        } // if
+        
+        else if( backSexp.mtype == NIL ){ // 連存的不存
+          return Sexp(LIST,sslist);
+        } // else if
+
+        else { // 其他就默認是atom，所以會像(1 . 2 ) 要存1 和 .和 2 
+          sslist.push_back(dotSexp);
+          sslist.push_back(backSexp);
+          return Sexp(LIST,sslist);
+        } // else
+      } // if
+
+      else { //寫到後面才發現確定文法不出錯了，不用作錯誤檢查
+        return Sexp(LIST, sslist);
+      } // else
+    } // else if
+
+    else if ( t.type == INT || t.type == FLOAT ){
+      s.type = NUMBER;
+      s.number = atof(t.value.c_str());
+      return s;
+    } // else if
+
+    else if ( t.type == NIL || t.type == T || t.type == SYM || t.type == STRING ){
+      s.type = SYMBOL;
+      return s;
+    } // else if
+
+    else {
+      cout << "maybe has wrong( "<< tokenlist[loc].value << ")" << endl;
+      return Sexp();
+    } // else  
+  } // changeToSexpList
+
+  vector<Sexp> getSexpList(){
+    return SexpList;
+  } // getTokenList
+
+  Sexp getSexp(){
+    return SexpList[SexpList.size()-1];
+  } // getTokenList
+  
+  void clear(){
+    tokenlist.clear();
+  } // clear
+
+};
+
+/*
+  SexpType type;  
+  tokenType mtype;
+  string value;
+  double number;
+  vector<Sexp> Slist;
+  FUNCTIONPTR funptr;
+*/
+
+
+class Evaluate {
+public:
+  Sexp sTree; // 這個是存好的SexpTree  
+  void setSexp( Sexp exp){
+    sTree = exp;
+  } // setTable
+
+  void project1(int &endsignal){
+    if( sTree.type == LIST){
+      if( sTree.Slist.size() == 1 ){
+        if( sTree.Slist[0].value == "exit" ){
+          endsignal = 1;
+          return;
+        } // if
+      } // if
+    } // if
+
+    prettyPrint(sTree,0);
+  } // project1
+  
+  void prettyPrint(Sexp s,int M){
+    int i = 0, j = 0;
+    if ( s.type == LIST ){ 
+      cout << "( "; 
+      for( i = 0 ; i < s.Slist.size() ; i++ ){ // 後續的都在M+2
+        if ( i > 0 )
+          cout << "  ";
+        prettyPrint(s.Slist[i],M + 2);
+        for (j = 0; j < M ; j++)
+          cout << " ";
+      } // for 
+
+      cout << ")" << endl;
+    } // if
+
+    else { // ATOM 不是List代表沒有左右刮，是symbol(可能到時候要換型別)或是number就默認直接print 
+      if( s.mtype == INT )
+        cout << atoi(s.value.c_str()) << endl;
+      else if( s.mtype == FLOAT )
+        cout << fixed << setprecision(3) << s.number << endl;
+      else if( s.mtype == NIL ) 
+        cout << "nil" << endl;
+      else if( s.mtype == T ) 
+        cout << "#t" << endl;
+      else if( s.mtype == QUOTE)
+        cout << "quote" << endl;
+      else  // 那應該就是symbol了
+        cout << s.value << endl;
+    } // else 
+  } // prettyPrint
+
+  void clear(){
+    sTree = Sexp();
+  } // clear
+}; // Evalute
+
+
+
+class Environ{ //設計是這是變數的放置區，
+  map<string,Sexp> env; 
+  Environ * innerEnv;
+  vector<Sexp> mArgs;
+  vector<Sexp> mParas;
+}; // Env
 
 int main(){
   int utestnum = 0;
   char ch = '\0';
-  cin >> utestnum; // read testnum
-  cin >> ch; // read \n
+  cin >> utestnum ; // read testnum，不用讀換行why!
+  int endsignal = 0;
+  Scanner *scanner = new Scanner();
+  Parser parser(scanner);
+  Evaluate evaluate;
+  cout << "Welcome to OurScheme!" << endl ;	
   while( true ){
-    break;
-  } // 
-  cout << "Welcome to OurScheme!" << endl << "> ";	
+    try {
+      cout << endl << "> ";
+      parser.startParsing();
+      evaluate.setSexp(parser.getSexp());
+      evaluate.project1(endsignal);
+      if ( endsignal == 1)
+        break;
+    } // try
+
+    
+    catch( ErrorCondition e ){
+      e.PrintError();
+      if( e.errornum == 1) // 跳出EOF
+        break;
+      // cout << "TokenError at line " << e.line << ", column " << e.column << ": " << e.what() << endl;
+      cin.clear(); 
+      scanner->encounterError();
+      scanner->clear();
+      parser.clear();
+      evaluate.clear();
+    } // catch
+
+    cin.clear();
+    scanner->clear();
+    parser.clear();
+    evaluate.clear();
+  } // while
+  cout << endl << "Thanks for using OurScheme!";	
   return 0;
 } // main
 
 
+ 
