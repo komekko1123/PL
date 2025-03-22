@@ -10,11 +10,13 @@
 #include <iomanip> // for setprecision(cout到小數第三位)
 #include <ctype.h> // 用來看symbol是否可Print
 #include <cstdlib>   // for atoi 和 atof
+#include <functional> // 使用函數指標
+#include <unordered_set> // 用來放保留字的
+
 using namespace std;
 class Sexp;
 class SexpError;
-typedef Sexp (*FUNCTIONPTR)(const vector<Sexp>&);
-
+class Environ;
 bool isNumber(char c){
   if( c >= '0' && c <= '9' )
     return true;
@@ -31,6 +33,35 @@ bool isSymbolCharacter(char c){
     return false;
 } // isSymbol
 
+
+bool isReservedWord(string str){ // 因為不能define到這些元素，所以寫一個function出來看是不是。
+  static const unordered_set<string> reserved = { // static是只會有一個，const是不會更改(因為是保留字)，加上用set比較快。
+    // 保留字和function，沒有else，因為else只有在if時才有意義。
+    "quote", "and", "or", "begin", "if", "cond",
+    "define", "lambda", "set!", "let", "exit", "clean-environment",
+    "verbose", "verbose?",
+    // 找List元素和創造的東西
+    "cons", "car", "cdr", "list",
+    // 判定是不是
+    "atom?", "pair?", "list?", "null?",
+    "integer?", "real?", "number?", "string?", "boolean?", "symbol?",
+    "eqv?", "equal?", "error-object?",
+    // 算數
+    "+", "-", "*", "/",
+    ">", ">=", "<", "<=", "=",
+    // 邏輯和T/F這些等等
+    "not","nil","#f","#t","()",
+    // 字串操作
+    "string-append", "string>?", "string<?", "string=?", 
+    "symbol->string", "number->string", "display-string",
+    // I/O & 計算
+    "read", "write", "newline", "eval", 
+    "create-error-object", 
+    // 可能是funcion;
+    "set!"
+  };
+  return reserved.find(str) == reserved.end(); // 如果沒有找到就會是true，有找到上列字就是false
+} // isReservedWord
 
 
 
@@ -93,18 +124,26 @@ public:
   string value;
   float number;
   vector<Sexp> Slist;
-  FUNCTIONPTR funptr;
+  function<Sexp(const vector<Sexp>&)> funptr; // 函數指標 
   Sexp(){}
   Sexp(SexpType Stype, string theValue ){
     type = Stype;
     value = theValue;
   } // ERROR用到
+
+  Sexp(SexpType Stype, string theValue, vector<Sexp> theList ){
+    type = Stype;
+    value = theValue;
+    Slist = theList;
+  } // define error用的到
+
+
   Sexp(SexpType Stype, vector<Sexp> theList){
     type = Stype;
     Slist = theList;
   } // LIST的模式
 
-  Sexp(SexpType Stype, FUNCTIONPTR fptr){
+  Sexp(SexpType Stype, function<Sexp(const vector<Sexp>&)> fptr){
     Stype = FUNCTION;
     funptr = fptr;
   } // 指向函數指標
@@ -397,7 +436,8 @@ public:
   } // encounterError()
 
 }; // Scanner
-  
+
+
 class Parser{
 public:
   Scanner *sc;
@@ -588,14 +628,7 @@ public:
 
 };
 
-/*
-  SexpType type;  
-  tokenType mtype;
-  string value;
-  double number;
-  vector<Sexp> Slist;
-  FUNCTIONPTR funptr;
-*/
+
 class Evaluate {
 public:
   Sexp sTree; // 這個是存好的SexpTree  
@@ -609,12 +642,8 @@ public:
         return inEnv->retrieveEnv(ss);
       } // if
 
-      else if( ss.type == NUMBER )
+      else if( ss.type == NUMBER || ss.type == ERROR || ss.type == FUNCTION ) //不知道要不要FUNCTION
         return ss;
-      else if( ss.type == ERROR ){
-        return ss;
-      } // else if
-
       else if( ss.type == LIST ){ // 這邊有特殊形式(ai說有)quote,define,lambda,set!,and,or,begin,if,cond,let的function不能先求值，剩下的就要傳參後傳值
         if( ss.Slist.size() == 0) // 為什麼list函數可以接受空list!!!!!!!!!
           return ss;
@@ -622,22 +651,52 @@ public:
         // special function
         if( temp.mtype == QUOTE ) // QUOTE就拿下一個Sexp
           return ss.Slist[1];
-        else if( temp.value == "define") // define語句
+        else if( temp.value == "define" ){ // define語句
+          if( ss.Slist.size() != 3 ) // define 參數量 = 2 ==> 就是2是define symbol，3是 
+            throw Sexp(ERROR,"ERROR (DEFINE format) : ", ss.Slist);
+          if( ss.Slist[1].type == SYMBOL ){ // 定義SYMBOL
+            if( isReservedWord(ss.Slist[1].value) )
+              inEnv->doTheDefine(ss.Slist.value,ss.Slist[2]);
 
-        else if( ) // lambda
-        
-        else if( ) // set!
+          } // if
 
-        else if( ) // cond
+          else if( ss.Slist[1].type == LIST ){ // 定義FUNCTION
 
-        else if( ) // if
+          } // else if
 
-        else if( ) // cond
+        } // define
+        else if( temp.value == "lambda" ){ // lambda
 
-        else if( ) // 不知道clean env
+        } // else if 
+        else if( temp.value == "set!" ){ // set!
 
-        else if( ) // 還有exit算不算，先放著 
-        
+        } // else if 
+        else if( temp.value == "cond" ){ // cond
+
+        } // else if 
+        else if( temp.value == "if" ){ // if
+
+        } // else if 
+        else if( temp.value == "let" ){ // let
+
+        } // else if 
+        else if( temp.value == "and" ){ // and
+
+        } // else if 
+        else if( temp.value == "or" ){ // or
+
+        } // else if 
+        else if( temp.value == "begin" ){ // begin
+            
+        } // else if 
+        else if( temp.value == "clean-environment" ){ // 不知道clean env
+
+        }  // else if 
+
+        else if( temp.value == "exit" ){   // 還有exit算不算，先放著 
+
+        }  // else if 
+
         // normal function
         temp = evaluting(inEnv,temp); // 這可能是個symbol，變成function形式
         vector<Sexp> argc;
@@ -651,7 +710,7 @@ public:
         if( temp.type == FUNCTION ){
           return temp.funptr(argc);
         } // if
-        else if( arg.size() == 0 )
+        else if( argc.size() == 0 )
           return temp;
         else // 可能throw error之類的
           cout << "錯誤情況需要debug" << endl;
@@ -669,7 +728,7 @@ public:
         if( sTree.Slist[0].value == "exit" ){
           endsignal = 1;
           return;
-        } // if
+        } // if 
       } // if
     } // if
 
@@ -715,32 +774,48 @@ public:
 
 
 class Environ{ //設計是這是變數的放置區，
+public:  
   map<string,Sexp> env; 
-  Environ * innerEnv;
-  vector<Sexp> mArgc;
-  vector<Sexp> mParas;
+  Environ * Parent; // 設計是讓local指向global
   Environ(){
-    innerEnv = NULL;
+    Parent = NULL;
     buildinFunction();
   } // Environ
   
-  Environ(map<string,Sexp> env,  vector<Sexp> mParas,  vector<Sexp> mArgc){
-  }
+  Environ(Environ * upperParent){
+    Parent = upperParent;
+  } // 指向parent
+  
   void buildinFunction(){
-    env["+"] = Sexp(&add);
+    env["+"] = Sexp(FUNCTION,add);
   } // buildinFunction 
-  map<string,Sexp>* retrieveEnv( Sexp arg ){
-    auto it = env.find(arg.value);
-    if( it != env.end()   )
-      return &env; // 找到了返回環境
-    else if( innerEnv != NULL ){ //沒找到找innerEnv
-      return innerEnv->retrieveEnv(arg);  
+
+  void doTheDefine(string str, Sexp arg){
+    env[str] = arg;
+  } // doTheDefine 
+  Sexp retrieveEnv( Sexp arg ){
+    if( env.find(arg.value) != env.end()   )
+      return env[arg.value]; // 找到了返回環境
+    else if( Parent != NULL ){ //沒找到找往global，parent往上找。
+      return Parent->retrieveEnv(arg.value);  
     } //else if
     else
-      throw Sexp(ERROR,"ERROR (Unbound Symbol)"); // 
+      throw Sexp(ERROR,"ERROR (Unbound Symbol)"); 
   } // retrieveEnv
 
+  void updateEnv( string str, Sexp arg ){
+    if( env.find(str) != env.end()   )
+      env[str] = arg; 
+    else if( Parent != NULL ){ //沒找到找innerEnv
+      return Parent->updateEnv(str,arg);  
+    } //else if
+    else
+      throw Sexp(ERROR,"ERROR (Unbound Symbol)"); // updating error
+  } // retrieveEnv
   
+  Environ * extendEnv(  vector<Sexp> mArgc, vector<Sexp> mParas, Environ* upperParent){
+
+  } // extendEnv
 }; // Env
 
 // 用function pointer呼叫的function群
@@ -758,7 +833,7 @@ bool checkIsINT( const vector<Sexp> & ss ){
 
 bool checkIsFloat( const vector<Sexp> & ss){ // 先確定過int了代表float就可以直接過
   for( int i = 0 ; i < ss.size() ; i++ ){
-    if ( ss[i] != NUMBER ){
+    if ( ss[i].type != NUMBER ){
       cout << "不是數字" << endl;
       return false;
     } // else if
@@ -768,7 +843,7 @@ bool checkIsFloat( const vector<Sexp> & ss){ // 先確定過int了代表float就
 
 Sexp add(const vector<Sexp> & selist  ){
   if( selist.size() < 2 )
-    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : +"); // 
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : +"); // argument量
   float f = 0;
   int a = 0;
   stringstream ss;
