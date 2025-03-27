@@ -1,5 +1,6 @@
 // 啟航日3/19 pj2開始
-// 
+// 測試日3/28 pj2到dc測試
+
 #include <stdio.h>
 #include <iostream>
 #include <vector>
@@ -87,6 +88,7 @@ enum SexpType{
   FUNCTION,
   LIST,
   FUNCTION_LAMBDA, // 3/25新增()
+  PAIR, // 3/28新增()
 };
 
 
@@ -127,32 +129,43 @@ public:
   vector<Sexp> Slist;
   vector<string> paras;
   function<Sexp(const vector<Sexp>&)> funptr; // 函數指標 
-  Sexp(){}
+  static long nextID; // 3月28日(解決eqv要記憶體位址的問題!!!!!!!)
+  long uniqueID;  // 3月28日(解決eqv要記憶體位址的問題!!!!!!!)
+
+  Sexp(){  
+    uniqueID = nextID++;
+  } // 3/28
   Sexp(SexpType Stype, string theValue ){
     type = Stype;
     value = theValue;
+    uniqueID = nextID++;
   } // ERROR用到
 
   Sexp(SexpType Stype, vector<string> parameter ){
     type = Stype;
     paras = parameter;
+    uniqueID = nextID++;
   } // ERROR用到
 
   Sexp(SexpType Stype, string theValue, vector<Sexp> theList ){
     type = Stype;
     value = theValue;
     Slist = theList;
+    uniqueID = nextID++;
   } // define error用的到
 
 
   Sexp(SexpType Stype, vector<Sexp> theList){
     type = Stype;
     Slist = theList;
+    uniqueID = nextID++;
   } // LIST的模式
 
-  Sexp(SexpType Stype, function<Sexp(const vector<Sexp>&)> fptr){
-    Stype = FUNCTION;
+  Sexp(SexpType Stype, function<Sexp(const vector<Sexp>&)> fptr, string str){
+    value = str; // 3/28順便記一下function的名字
+    type = Stype;
     funptr = fptr;
+    uniqueID = nextID++;
   } // 指向函數指標
 
 
@@ -163,10 +176,11 @@ public:
     if( mtype == INT || mtype == FLOAT ) 
       number = atof(value.c_str()); // 架構怪了atof
     //其他默認symbol
+    uniqueID = nextID++;
   } // Sexp()
-
-
 }; // Sexp
+long Sexp::nextID = 1; // 3/28新增
+
 
 class ErrorCondition : public exception {
   public:
@@ -596,7 +610,7 @@ public:
         else { // 其他就默認是atom，所以會像(1 . 2 ) 要存1 和 .和 2 
           sslist.push_back(dotSexp);
           sslist.push_back(backSexp);
-          return Sexp(LIST,sslist);
+          return Sexp(PAIR,sslist);  // 3/28新增把它變成PAIR(其實就是improper list)
         } // else
       } // if
 
@@ -642,7 +656,6 @@ bool checkIsINT( const vector<Sexp> & ss ){
     if( ss[i].type == NUMBER && ss[i].mtype != INT )
       return false;
     else if ( ss[i].type != NUMBER && ss[i].mtype == INT ){
-      cout << "可能有bug" << endl;
       return false;
     } // else if
   } // for
@@ -652,14 +665,81 @@ bool checkIsINT( const vector<Sexp> & ss ){
 bool checkIsFloat( const vector<Sexp> & ss){ // 先確定過int了代表float就可以直接過
   for( int i = 0 ; i < ss.size() ; i++ ){
     if ( ss[i].type != NUMBER ){
-      cout << "不是數字" << endl;
       return false;
     } // else if
   } // for
   return true;  
 } // checkIsFloat
 
-Sexp add(const vector<Sexp> & selist  ){
+bool checkIsString( const vector<Sexp> & ss){ // CHECK_STRING
+  for( int i = 0 ; i < ss.size() ; i++ ){
+    if ( ss[i].mtype != STRING ){
+      return false;
+    } // else if
+  } // for
+  return true;  
+} // checkIsString
+
+bool checkSexpEqual(const Sexp &a, const Sexp &b){ //其實只是把equal?拿來用，用遞迴來解決list跟pair(improper list)
+  if( a.uniqueID == b.uniqueID ){  
+    return true;
+  } // if
+
+  if( a.type != b.type )
+    return false; 
+  if( a.type == LIST || a.type == PAIR ){
+    if (a.Slist.size() != b.Slist.size()) 
+      return false;
+    for(int i = 0 ; i < a.Slist.size() ; i++){
+      if ( ! checkSexpEqual(a.Slist[i], b.Slist[i]) )
+        return false;
+    } // for
+  } // if
+
+  else if( a.mtype == STRING ){
+    if( a.value == b.value )
+      return true;
+    else  
+      return false; 
+  } // else if
+  else if( a.type == NUMBER ){
+    if( atof(a.value.c_str()) == atof(b.value.c_str()) )
+      return true;
+    else  
+      return false; 
+  } // else if
+
+  else if( a.type == FUNCTION ){
+    if( a.value == b.value )
+      return true;
+    else
+      return false; 
+  } // else if
+
+  else if( a.type == FUNCTION_LAMBDA ){
+    if( a.value == b.value )
+      return true;
+    else
+      return false; 
+  } // else if
+  
+  else if( a.mtype == NIL || a.mtype == T )
+    return true;
+  else if( a.type == SYMBOL ){ // 感覺不太可能走到這
+    if( a.value == b.value )
+      return true;
+    else
+      return false; 
+  } // else if
+
+  else // 感覺不會去比較error物件把
+    return false; 
+  cout << "到這邊可能有錯" << endl;
+  return false;
+} // checkSexpEqual
+
+
+Sexp doAdd(const vector<Sexp> & selist  ){
   if( selist.size() < 2 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : +"); // argument量
   float f = 0;
@@ -682,18 +762,19 @@ Sexp add(const vector<Sexp> & selist  ){
   } // else if    
 
   else {
+    vector<Sexp> errorSexp;
     string str = "ERROR (+ with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
       if ( selist[i].type != NUMBER ){
-        str = str + selist[i].value;
+        errorSexp.push_back(selist[i]);
         break;
       } // else if  
     } // for
-    throw Sexp(ERROR,str); // 丟錯誤物件
+    throw Sexp(ERROR,"ERROR (+ with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // else
 } // add
 
-Sexp minus(const vector<Sexp> & selist  ){
+Sexp doMinus(const vector<Sexp> & selist  ){
   if( selist.size() < 2 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : -"); // 
   float f = 0;
@@ -716,18 +797,19 @@ Sexp minus(const vector<Sexp> & selist  ){
   } // else if    
 
   else {
+    vector<Sexp> errorSexp;
     string str = "ERROR (- with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
       if ( selist[i].type != NUMBER ){
-        str = str + selist[i].value;
+        errorSexp.push_back(selist[i]);
         break;
       } // else if  
     } // for
-    throw Sexp(ERROR,str); // 丟錯誤物件
+    throw Sexp(ERROR,"ERROR (- with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // else
 } // minus
 
-Sexp multlipy(const vector<Sexp> & selist  ){
+Sexp doMultlipy(const vector<Sexp> & selist  ){
   if( selist.size() < 2 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : *"); // 
   float f = 0;
@@ -750,18 +832,19 @@ Sexp multlipy(const vector<Sexp> & selist  ){
   } // else if    
 
   else {
+    vector<Sexp> errorSexp;
     string str = "ERROR (* with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
       if ( selist[i].type != NUMBER ){
-        str = str + selist[i].value;
+        errorSexp.push_back(selist[i]);
         break;
       } // else if  
     } // for
-    throw Sexp(ERROR,str); // 丟錯誤物件
+    throw Sexp(ERROR,"ERROR (* with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // else
 } // multlipy
 
-Sexp divide(const vector<Sexp> & selist  ){
+Sexp doDivide(const vector<Sexp> & selist  ){
   if( selist.size() < 2 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : /"); // 
   float f = 0;
@@ -791,14 +874,15 @@ Sexp divide(const vector<Sexp> & selist  ){
   } // else if    
 
   else {
+    vector<Sexp> errorSexp;
     string str = "ERROR (/ with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
       if ( selist[i].type != NUMBER ){
-        str = str + selist[i].value;
+        errorSexp.push_back(selist[i]);
         break;
       } // else if  
     } // for
-    throw Sexp(ERROR,str); // 丟錯誤物件
+    throw Sexp(ERROR,"ERROR (/ with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // else
 } // divide
 
@@ -824,7 +908,7 @@ Sexp cons(const vector<Sexp> & selist  ){
     Sexp dotSexp = Sexp(SYMBOL,DOT,".");
     temp.push_back(dotSexp);
     temp.push_back(selist[1]);
-    return Sexp(LIST,temp);
+    return Sexp(PAIR,temp); // 3/28 improper list
   } // else
 } // add
 
@@ -833,30 +917,53 @@ Sexp createList(const vector<Sexp> & selist  ){ // 空list是否回傳nil!!*****
   for( int i = 0 ; i < selist.size() ; i++){
     temp.push_back(selist[i]);
   } // for
-  return Sexp(LIST,temp);
+  
+  if( temp.size() == 0)
+    return Sexp(SYMBOL,NIL,"nil");
+  else
+    return Sexp(LIST,temp);
 } // add
 
 
-Sexp car(const vector<Sexp> & selist  ){
+Sexp car(const vector<Sexp> & selist  ){ //拿第一個元素
   if( selist.size() != 1 )
-    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : cons"); // 
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : car"); // 
+  if( selist[0].type != LIST && selist[0].type != PAIR )
+    throw Sexp(ERROR,"ERROR (car with incorrect argument type) : ", selist); //
   return selist[0].Slist[0];
 } // add
 
-Sexp cdr(const vector<Sexp> & selist  ){
+Sexp cdr(const vector<Sexp> & selist  ){ //拿剩下元素
   if( selist.size() != 1 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : cons"); // 
+  if( selist[0].type != LIST && selist[0].type != PAIR )
+    throw Sexp(ERROR,"ERROR (cdr with incorrect argument type) : ", selist); //
+
+  bool withdot = false;
+  if( selist[0].Slist.size() == 3 && selist[0].type == PAIR ){ // ( 1 . 2 )會把dot稀釋掉，其他情況不會因為dot只能接一個sexp
+    return selist[0].Slist[2];  //回傳第三個
+  } // if
+  
+  else if(  selist[0].Slist.size() < 2)
+    return Sexp(SYMBOL, NIL, "nil"); // 1和0 被去除後就是nil
+
   vector<Sexp> temp;
   for( int i = 1 ; i < selist[0].Slist.size() ; i++){
     temp.push_back(selist[0].Slist[i]);
+    if( selist[0].Slist[i].value == "." || selist[0].Slist[i].mtype == DOT )
+      withdot = true;
   } // for
-  return Sexp(LIST,temp);
+
+  if( withdot == true) 
+    return Sexp(PAIR,temp); // ( 1 2 . 3) 這樣的話去除第一個就是 ( 2 . 3 )這樣
+  else
+    return Sexp(LIST,temp);
 } // add
 
 Sexp predictAtom(const vector<Sexp> & selist  ){
   if( selist.size() != 1 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : atom?"); //
-  if( selist[0].type == SYMBOL || selist[0].type == NUMBER )
+  if( ( selist[0].type == SYMBOL && selist[0].mtype != NIL ) || selist[0].type == NUMBER )
     return Sexp(SYMBOL,T,"#t");
   else
     return Sexp(SYMBOL,NIL,"nil");  
@@ -864,79 +971,332 @@ Sexp predictAtom(const vector<Sexp> & selist  ){
 
 Sexp predictPair(const vector<Sexp> & selist  ){
   if( selist.size() != 1 )
-    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : atom?"); //
-  if( selist[0].type == SYMBOL || selist[0].type == NUMBER )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : pair?"); //
+  if( selist[0].type == LIST || selist[0].type == PAIR )
     return Sexp(SYMBOL,T,"#t");
   else
     return Sexp(SYMBOL,NIL,"nil");  
 } // add
 
 Sexp predictList(const vector<Sexp> & selist  ){
-
+  if( selist.size() != 1 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : List?"); //
+  if( selist[0].type == LIST )
+    return Sexp(SYMBOL,T,"#t");
+  else
+    return Sexp(SYMBOL,NIL,"nil"); 
 } // add
 
 Sexp predictNull(const vector<Sexp> & selist  ){
-
+  if( selist.size() != 1 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : null?"); //
+  if( selist[0].mtype == NIL )
+    return Sexp(SYMBOL,T,"#t");
+  else
+    return Sexp(SYMBOL,NIL,"nil"); 
 } // add
 
 Sexp predictInteger(const vector<Sexp> & selist  ){
-
+  if( selist.size() != 1 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : integer?"); //
+  if( checkIsINT(selist) )
+    return Sexp(SYMBOL,T,"#t");
+  else
+    return Sexp(SYMBOL,NIL,"nil"); 
 } // add
 
 Sexp predictNumber(const vector<Sexp> & selist  ){
+  if( selist.size() != 1 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : number?"); //
+  if( checkIsFloat(selist) ) // 本來float的設計是看不是int的number，所以這樣設計。
+    return Sexp(SYMBOL,T,"#t");
+  else
+    return Sexp(SYMBOL,NIL,"nil"); 
+} // add
 
+Sexp predictReal(const vector<Sexp> & selist  ){
+  if( selist.size() != 1 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : real?"); //
+  if( checkIsFloat(selist) )
+    return Sexp(SYMBOL,T,"#t");
+  else
+    return Sexp(SYMBOL,NIL,"nil"); 
 } // add
 
 
 Sexp predictString(const vector<Sexp> & selist  ){
-
+  if( selist.size() != 1 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : string?"); //
+  if( selist[0].mtype == STRING )
+    return Sexp(SYMBOL,T,"#t");
+  else
+    return Sexp(SYMBOL,NIL,"nil"); 
 } // add
 
 
 Sexp predictBoolean(const vector<Sexp> & selist  ){
-
+  if( selist.size() != 1 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : boolean?"); //
+  if( selist[0].mtype == NIL || selist[0].mtype == T )
+    return Sexp(SYMBOL,T,"#t");
+  else
+    return Sexp(SYMBOL,NIL,"nil"); 
 } // add
 
 Sexp predictSymbol(const vector<Sexp> & selist  ){
-
+  if( selist.size() != 1 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : boolean?"); //
+  if( selist[0].mtype == SYM )
+    return Sexp(SYMBOL,T,"#t");
+  else
+    return Sexp(SYMBOL,NIL,"nil"); 
 } // add
 
 Sexp greaterThan(const vector<Sexp> & selist  ){
+  if( selist.size() < 2 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : >"); //
+  if( ! checkIsFloat(selist) ){
+    vector<Sexp> errorSexp;
+    string str = "ERROR (> with incorrect argument type) : ";
+    for(int i = 0 ; i < selist.size(); i++){
+      if ( selist[i].type != NUMBER ){
+        errorSexp.push_back(selist[i]);
+        break;
+      } // else if  
+    } // for
+    throw Sexp(ERROR,"ERROR (> with incorrect argument type) : ",errorSexp); // 丟錯誤物件
+  } // if
 
+  if( checkIsINT(selist) == true ){
+    for( int i = 0; i < selist.size() -1 ; i++ ){
+      if( atoi(selist[i].value.c_str()) <= atoi(selist[i+1].value.c_str()) )
+        return Sexp(SYMBOL,NIL,"nil"); 
+    } // for
+  } // if
+
+  else if ( checkIsFloat(selist) == true ){
+    for( int i = 0; i < selist.size() - 1 ; i++ ){
+      if( atof(selist[i].value.c_str()) <= atof(selist[i+1].value.c_str()) )
+        return Sexp(SYMBOL,NIL,"nil"); 
+    } // for
+  } // else if    
+  return Sexp(SYMBOL,T,"#t");
 } // add
 
 
 Sexp greaterEqual(const vector<Sexp> & selist  ){
+  if( selist.size() < 2 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : >="); //
+  if( ! checkIsFloat(selist) ){
+    vector<Sexp> errorSexp;
+    string str = "ERROR (>= with incorrect argument type) : ";
+    for(int i = 0 ; i < selist.size() ; i++){
+      if ( selist[i].type != NUMBER ){
+        errorSexp.push_back(selist[i]);
+        break;
+      } // else if  
+    } // for
+    throw Sexp(ERROR,"ERROR (>= with incorrect argument type) : ",errorSexp); // 丟錯誤物件
+  } // if
 
+  if( checkIsINT(selist) == true ){
+    for( int i = 0; i < selist.size() - 1 ; i++ ){
+      if( atoi(selist[i].value.c_str()) < atoi(selist[i+1].value.c_str()) )
+        return Sexp(SYMBOL,NIL,"nil"); 
+    } // for
+  } // if
+
+  else if ( checkIsFloat(selist) == true ){
+    for( int i = 0; i < selist.size() - 1 ; i++ ){
+      if( atof(selist[i].value.c_str()) < atof(selist[i+1].value.c_str()) )
+        return Sexp(SYMBOL,NIL,"nil"); 
+    } // for
+  } // else if    
+  return Sexp(SYMBOL,T,"#t");
 } // add
 
 Sexp lessThan(const vector<Sexp> & selist  ){
+  if( selist.size() < 2 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : <"); //
+  if( ! checkIsFloat(selist) ){
+    vector<Sexp> errorSexp;
+    string str = "ERROR (< with incorrect argument type) : ";
+    for(int i = 0 ; i < selist.size(); i++){
+      if ( selist[i].type != NUMBER ){
+        errorSexp.push_back(selist[i]);
+        break;
+      } // else if  
+    } // for
+    throw Sexp(ERROR,"ERROR (< with incorrect argument type) : ",errorSexp); // 丟錯誤物件
+  } // if
 
+  if( checkIsINT(selist) == true ){
+    for( int i = 0; i < selist.size() - 1 ; i++ ){
+      if( atoi(selist[i].value.c_str()) > atoi(selist[i+1].value.c_str()) )
+        return Sexp(SYMBOL,NIL,"nil"); 
+    } // for
+  } // if
+
+  else if ( checkIsFloat(selist) == true ){
+    for( int i = 0; i < selist.size() - 1; i++ ){
+      if( atof(selist[i].value.c_str()) > atof(selist[i+1].value.c_str()) )
+        return Sexp(SYMBOL,NIL,"nil"); 
+    } // for
+  } // else if    
+  return Sexp(SYMBOL,T,"#t");
 } // add
 
 Sexp lessEqual(const vector<Sexp> & selist  ){
+  if( selist.size() < 2 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : <="); //
+  if( ! checkIsFloat(selist) ){
+    vector<Sexp> errorSexp;
+    string str = "ERROR (<= with incorrect argument type) : ";
+    for(int i = 0 ; i < selist.size(); i++){
+      if ( selist[i].type != NUMBER ){
+        errorSexp.push_back(selist[i]);
+        break;
+      } // else if  
+    } // for
+    throw Sexp(ERROR,"ERROR (<= with incorrect argument type) : ",errorSexp); // 丟錯誤物件
+  } // if
 
+  if( checkIsINT(selist) == true ){
+    for( int i = 0; i < selist.size() - 1 ; i++ ){
+      if( atoi(selist[i].value.c_str()) > atoi(selist[i+1].value.c_str()) )
+        return Sexp(SYMBOL,NIL,"nil"); 
+    } // for
+  } // if
+
+  else if ( checkIsFloat(selist) == true ){
+    for( int i = 0; i < selist.size() - 1 ; i++ ){
+      if( atof(selist[i].value.c_str()) > atof(selist[i+1].value.c_str()) )
+        return Sexp(SYMBOL,NIL,"nil"); 
+    } // for
+  } // else if    
+  return Sexp(SYMBOL,T,"#t");
 } // add
 
 
 Sexp isSame(const vector<Sexp> & selist  ){
+  if( selist.size() < 2 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : ="); //
+  if( ! checkIsFloat(selist) ){
+    vector<Sexp> errorSexp;
+    string str = "ERROR (= with incorrect argument type) : ";
+    for(int i = 0 ; i < selist.size(); i++){
+      if ( selist[i].type != NUMBER ){
+        errorSexp.push_back(selist[i]);
+        break;
+      } // else if  
+    } // for
+    throw Sexp(ERROR,"ERROR (= with incorrect argument type) : ",errorSexp); // 丟錯誤物件
+  } // if
 
+  if( checkIsINT(selist) == true ){
+    for( int i = 0; i < selist.size() - 1 ; i++ ){
+      if( atoi(selist[i].value.c_str()) != atoi(selist[i+1].value.c_str()) )
+        return Sexp(SYMBOL,NIL,"nil"); 
+    } // for
+  } // if
+
+  else if ( checkIsFloat(selist) == true ){
+    for( int i = 0; i < selist.size() - 1 ; i++ ){
+      if( atof(selist[i].value.c_str()) != atof(selist[i+1].value.c_str()) )
+        return Sexp(SYMBOL,NIL,"nil"); 
+    } // for
+  } // else if    
+  return Sexp(SYMBOL,T,"#t");
 } // add
 
 Sexp stringAppend(const vector<Sexp> & selist  ){
+  if( selist.size() < 2 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : string-append"); //
+  if( ! checkIsString(selist) ){
+    vector<Sexp> errorSexp;
+    string str = "ERROR (string-append with incorrect argument type) : ";
+    for(int i = 0 ; i < selist.size(); i++){
+      if ( selist[i].mtype != STRING ){
+        errorSexp.push_back(selist[i]);
+        break;
+      } // else if  
+    } // for
+    throw Sexp(ERROR,"ERROR (string-append with incorrect argument type) : ",errorSexp); // 丟錯誤物件
+  } // if
 
+  string str = "";
+  for( int i = 0; i < selist.size() - 1 ; i++ )
+    str = str + selist[i].value;
+  return Sexp(SYMBOL,STRING,str);
 } // add
 
 Sexp isStringGreaterThan(const vector<Sexp> & selist  ){
+  if( selist.size() < 2 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : string>?"); //
+  if( ! checkIsString(selist) ){
+    vector<Sexp> errorSexp;
+    string str = "ERROR (string>? with incorrect argument type) : ";
+    for(int i = 0 ; i < selist.size(); i++){
+      if ( selist[i].mtype != STRING ){
+        errorSexp.push_back(selist[i]);
+        break;
+      } // else if  
+    } // for
+    throw Sexp(ERROR,"ERROR (string>? with incorrect argument type) : ",errorSexp); // 丟錯誤物件
+  } // if
 
+  for( int i = 0; i < selist.size() - 1 ; i++ ){
+    if( selist[i].value <= selist[i+1].value )
+      return Sexp(SYMBOL,NIL,"nil"); 
+  } // for
+
+  return Sexp(SYMBOL,T,"#t");
 } // add
 
 Sexp isStringLessThan(const vector<Sexp> & selist  ){
+  if( selist.size() < 2 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : string<?"); //
+  if( ! checkIsString(selist) ){
+    vector<Sexp> errorSexp;
+    string str = "ERROR (string<? with incorrect argument type) : ";
+    for(int i = 0 ; i < selist.size(); i++){
+      if ( selist[i].mtype != STRING ){
+        errorSexp.push_back(selist[i]);
+        break;
+      } // else if  
+    } // for
+    throw Sexp(ERROR,"ERROR (string<? with incorrect argument type) : ",errorSexp); // 丟錯誤物件
+  } // if
 
+  for( int i = 0; i < selist.size() - 1 ; i++ ){
+    if( selist[i].value >= selist[i+1].value )
+      return Sexp(SYMBOL,NIL,"nil"); 
+  } // for
+
+  return Sexp(SYMBOL,T,"#t");
 } // add
 
 Sexp isStringSame(const vector<Sexp> & selist  ){
+  if( selist.size() < 2 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : string=?"); //
+  if( ! checkIsString(selist) ){
+    vector<Sexp> errorSexp;
+    string str = "ERROR (string=? with incorrect argument type) : ";
+    for(int i = 0 ; i < selist.size(); i++){
+      if ( selist[i].mtype != STRING ){
+        errorSexp.push_back(selist[i]);
+        break;
+      } // else if  
+    } // for
+    throw Sexp(ERROR,"ERROR (string=? with incorrect argument type) : ",errorSexp); // 丟錯誤物件
+  } // if
 
+  for( int i = 0; i < selist.size() - 1 ; i++ ){
+    if( selist[i].value != selist[i+1].value )
+      return Sexp(SYMBOL,NIL,"nil"); 
+  } // for
+
+  return Sexp(SYMBOL,T,"#t");
 } // add
 
 Sexp isEqv(const vector<Sexp> & selist  ){ 
@@ -949,11 +1309,60 @@ Sexp isEqv(const vector<Sexp> & selist  ){
 ; equal?, on the other hand, is the usual notion of 
 ; equality comparison
 */
-} // add
+  if( selist.size() != 2 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : eqv?"); 
+  if( selist[0].type != selist[1].type ){
+    return Sexp(SYMBOL,NIL,"nil"); 
+  } // if
+
+  if( selist[0].uniqueID == selist[1].uniqueID ){  
+    return Sexp(SYMBOL,T,"#t");
+  } // if
+
+  if( selist[0].type == LIST || selist[0].type == PAIR || selist[0].mtype == STRING )
+    return Sexp(SYMBOL,NIL,"nil"); 
+  else if( selist[0].type == NUMBER ){
+    if( atof(selist[0].value.c_str()) == atof(selist[1].value.c_str()) )
+      return Sexp(SYMBOL,T,"#t");
+    else
+      return Sexp(SYMBOL,NIL,"nil"); 
+  } // else if
+
+  else if( selist[0].type == FUNCTION ){
+    if( selist[0].value == selist[1].value )
+      return Sexp(SYMBOL,T,"#t");
+    else
+      return Sexp(SYMBOL,NIL,"nil"); 
+  } // else if
+
+  else if( selist[0].type == FUNCTION_LAMBDA ){
+    if( selist[0].value == selist[1].value )
+      return Sexp(SYMBOL,T,"#t");
+    else
+      return Sexp(SYMBOL,NIL,"nil"); 
+  } // else if
+  
+  else if( selist[0].mtype == NIL || selist[0].mtype == T )
+    return Sexp(SYMBOL,T,"#t");
+  else if( selist[0].type == SYMBOL ){ // 感覺不太可能走到這
+    if( selist[0].value == selist[1].value )
+      return Sexp(SYMBOL,T,"#t");
+    else
+      return Sexp(SYMBOL,NIL,"nil"); 
+  } // else if
+
+  else // 感覺不會去比較error物件把
+    return Sexp(SYMBOL,NIL,"nil"); 
+} // isEqv
 
 Sexp isEqual(const vector<Sexp> & selist  ){
-
-} // add  
+  if( selist.size() != 2 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : equal?"); 
+  if ( checkSexpEqual(selist[0],selist[1]) )
+    return Sexp(SYMBOL,T,"#t");
+  else
+    return Sexp(SYMBOL,NIL,"nil"); 
+} // isEqual  
 
 
 
@@ -969,18 +1378,48 @@ class Environ{ //設計是這是變數的放置區，
     Environ(Environ * upperParent){
       Parent = upperParent;
     } // 指向parent
-    
-    Environ(Environ * upperParent, Sexp s){
-      Parent = upperParent;
-    } // 指向parent
-
-    Environ(Environ * upperParent, vector<Sexp> mParas, vector<Sexp> mArgc){
-      Parent = upperParent;
-    } // 指向parent
 
     void buildinFunction(){
-      env["+"] = Sexp(FUNCTION,add);
-      env["lambda"] = Sexp(FUNCTION,"lambda");
+      // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      // error的判斷(怎樣的寫法應該算什麼樣的error？)是以HowToWriteOurScheme.doc為準
+      // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+      // Below are the primitives (and features) that your system should implement.
+      // (括號內的數字指的是這個function可接受的argument的數目 - i.e., the number of
+      // arguments that this function can take)
+      // 1. Constructors
+      env["cons"] = Sexp(FUNCTION, cons, "cons");
+      env["list"] = Sexp(FUNCTION, createList, "list");
+      // 4. Part accessors
+      env["car"] = Sexp(FUNCTION, car, "car");
+      env["cdr"] = Sexp(FUNCTION, cdr, "cdr");
+      // 5. Primitive predicates (all functions below can only take 1 argument)
+      env["atom?"] = Sexp(FUNCTION, predictAtom, "atom?");
+      env["pair?"] = Sexp(FUNCTION, predictPair, "pair?");
+      env["list?"] = Sexp(FUNCTION, predictList, "list?");
+      env["null?"] = Sexp(FUNCTION, predictNull, "null?");
+      env["integer?"] = Sexp(FUNCTION, predictInteger, "integer?");
+      env["real?"]  = Sexp(FUNCTION, predictReal, "real?");
+      env["number?"] = Sexp(FUNCTION, predictNumber, "number?");
+      env["string?"] = Sexp(FUNCTION, predictString, "string?");
+      env["boolean?"] = Sexp(FUNCTION, predictBoolean, "boolean?");
+      env["symbol?"] = Sexp(FUNCTION, predictSymbol, "symbol?");
+      // 6. Basic arithmetic, logical and string operations
+      env["+"] = Sexp(FUNCTION, doAdd, "add");
+      env["-"] = Sexp(FUNCTION, doMinus, "-");
+      env["*"] = Sexp(FUNCTION, doMultlipy, "*");
+      env["/"] = Sexp(FUNCTION, doDivide, "/");
+      // ; all functions below can take 2 or more arguments
+      env[">"]  = Sexp(FUNCTION, greaterThan, ">");
+      env[">="] = Sexp(FUNCTION, greaterEqual, ">=");
+      env["<"] = Sexp(FUNCTION, lessThan, "<");
+      env["<="] = Sexp(FUNCTION, lessEqual, "<=");
+      env["="] = Sexp(FUNCTION, isSame, "=");
+      env["string-append"] = Sexp(FUNCTION, stringAppend, "string-append");
+      env["string>?"] = Sexp(FUNCTION, isStringGreaterThan, "string>?");
+      env["string<?"] = Sexp(FUNCTION, isStringLessThan, "string<?");
+      env["string=?"] = Sexp(FUNCTION, isStringSame, "string=?");
+      // 7. Eqivalence tester
+      env["not"] = Sexp(FUNCTION, isNot, "not");
     } // buildinFunction 
   
     void doTheDefine(string str, Sexp arg){
@@ -1034,17 +1473,16 @@ class Evaluate {
   
     Sexp evaluting( Environ * inEnv, Sexp ss ){ 
       try{ 
-        if( ss.mtype == NIL || ss.mtype == T || ss.mtype == STRING ) // 寫PROJECT 1以為這些也可以變形，難受了
-          return ss;
+        if( ss.mtype == NIL || ss.mtype == T || ss.mtype == STRING || ss.type == NUMBER || ss.type == ERROR
+                            || ss.type == FUNCTION  || ss.type == FUNCTION_LAMBDA  ) // 寫PROJECT 1以為這些也可以變形，難受了，不知道要不要FUNCTION
+          return ss; 
         else if( ss.type == SYMBOL ){ //拿symbol，dot可能會有bug
           return inEnv->retrieveEnv(ss);
         } // if
-  
-        else if( ss.type == NUMBER || ss.type == ERROR || ss.type == FUNCTION ) //不知道要不要FUNCTION
-          return ss;
+
         else if( ss.type == LIST ){ // 這邊有特殊形式(ai說有)quote,define,lambda,set!,and,or,begin,if,cond,let的function不能先求值，剩下的就要傳參後傳值
           if( ss.Slist.size() == 0) // 為什麼list函數可以接受空list!!!!!!!!!
-            return ss;
+            return Sexp(SYMBOL,NIL,"nil");
           Sexp temp = ss.Slist[0];
           // special function
           if( temp.mtype == QUOTE ) // QUOTE就拿下一個Sexp
@@ -1101,7 +1539,7 @@ class Evaluate {
               
               else { // 很多args
                 for( int i = 0 ; i < ss.Slist[1].Slist.size(); i++){
-                  if( ss.Slist[1].Slist[i].type != SYMBOL || isReservedWord(ss.Slist[1].Slist[i].value)  ){
+                  if( ss.Slist[1].Slist[i].type != SYMBOL || isReservedWord(ss.Slist[1].Slist[i].value )  ){
                     throw Sexp(ERROR,"ERROR (LAMBDA format) : ", ss.Slist);
                   } // if
                   parameters.push_back(ss.Slist[1].Slist[i].value);
@@ -1314,12 +1752,20 @@ class Evaluate {
           else // 可能throw error之類的
             cout << "錯誤情況需要debug" << endl;
         } // else if  
-  
+        
+        else if( ss.type == PAIR ){ // 3/28新增for ( 1 . 2 ) 這種狀況。
+          throw Sexp(ERROR,"ERROR (non-list) : ", ss.Slist);
+        } // else if
+        else 
+          return Sexp(ERROR,"Unknown Type For Debug"); // Untype for debug
       } // try
   
       catch(Sexp error){
         return error;
       } // catch
+
+      cout << "可能有bug" << endl;
+      return Sexp(ERROR,"Unknown Type For Debug"); // Untype for debug
     } // evaluing
     void project1(int &endsignal){
       if( sTree.type == LIST){
@@ -1334,6 +1780,22 @@ class Evaluate {
       prettyPrint(sTree,0);
     } // project1
     
+    void project2(Environ *globalglobal ,int &endsignal){
+      Sexp ce = evaluting( globalglobal, sTree ); // complete expression
+      if( ce.type == LIST && ce.Slist.size() == 1 ){
+        if( ce.Slist[0].value == "exit" ){
+          endsignal = 1;
+          return;
+        } // if
+
+        else if( ce.Slist[0].value == "clean-environment"){
+          ce = Sexp(SYMBOL,STRING,"environment cleaned");
+        } // else if
+      } // if
+
+      prettyPrint(ce,0);
+    } // project1
+
     void prettyPrint(Sexp s,int M){
       int i = 0, j = 0;
       if ( s.type == LIST ){ 
@@ -1383,13 +1845,15 @@ int main(){
   Scanner *scanner = new Scanner();
   Parser parser(scanner);
   Evaluate evaluate;
+  Environ *globalglobal = new Environ();
   cout << "Welcome to OurScheme!" << endl ;	
   while( true ){
     try {
       cout << endl << "> ";
       parser.startParsing();
       evaluate.setSexp(parser.getSexp());
-      evaluate.project1(endsignal);
+      // evaluate.project1(endsignal);
+      evaluate.project2(globalglobal,endsignal);
       if ( endsignal == 1)
         break;
     } // try
