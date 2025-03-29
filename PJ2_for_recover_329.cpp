@@ -1,6 +1,6 @@
 // 啟航日3/19 pj2開始
 // 測試日3/28 pj2到dc測試
-// 完成日3/30 
+
 // 測試筆記(第一題隱測: cons搭配pair如 ( 1 '(1 . 2 ) )時答案是(1 1 . 2 )不是( 1 . 1 . 2 ) )
 // 第二題是string-append的問題，append string要扣除最前面和最後面的" 如"abc" + "def" ="abcdef" 不是"abc""def"
 // quote和'的不同， '這個要加括號，quote不用加括號，我的天
@@ -158,7 +158,14 @@ public:
   } // 3/28
   Sexp(SexpType Stype, string theValue ){
     type = Stype;
-    value = theValue;
+    error = theValue;
+    mtype = ERR;
+    uniqueID = nextID++;
+  } // ERROR用到
+
+  Sexp(SexpType Stype, string theValue,  ){
+    type = Stype;
+    error = theValue;
     mtype = ERR;
     uniqueID = nextID++;
   } // ERROR用到
@@ -213,10 +220,6 @@ public:
 }; // Sexp
 long Sexp::nextID = 1; // 3/28新增
 
-  Sexp RebuildSexp( string message, Sexp token){ // 為了解錯誤訊息token
-    token.errormessage = message;
-    return token;
-  } // RebuildSexp
 
 class ErrorCondition : public exception {
   public:
@@ -252,17 +255,7 @@ class ErrorCondition : public exception {
       } // PrintError
 
       
-};
-
-class SignalLight{
-public:
-  string value;
-  SignalLight(){  
-  }
-  SignalLight(string theValue ){
-    value = theValue;
-  } //
-}; // 
+  };
 
 class Scanner {
 public:
@@ -641,8 +634,8 @@ public:
       loc = loc + 1; // 去除右刮號
 
       if ( haveDot == true){
-        if ( backSexp.type == LIST || backSexp.type == PAIR ){ // 存LIST( 第三題的錯誤可能是這，要把list的內容全部拉進來..pretty print真的問題一堆)
-          for( int i = 0 ; i < backSexp.Slist.size(); i++){ // 3/29 寫到project2新增了pair型別後，第三題的錯誤又來了。出現在第15題
+        if ( backSexp.type == LIST ){ // 存LIST( 第三題的錯誤可能是這，要把list的內容全部拉進來..pretty print真的問題一堆)
+          for( int i = 0 ; i < backSexp.Slist.size(); i++){
             Sexp temp = backSexp.Slist[i];
             sslist.push_back(temp);
           } // for   
@@ -817,7 +810,7 @@ Sexp doAdd(const vector<Sexp> & selist  ){
       } // if  
 
       else if( selist[i].type != NUMBER )
-        throw RebuildSexp("ERROR (+ with incorrect argument type) : ",selist[i]); // 丟錯誤物件  
+        throw Sexp(ERROR,"ERROR (+ with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
   } // else
   return Sexp(ERROR,"UNKNOWN FUNCTION ERROR");
@@ -852,7 +845,7 @@ Sexp doMinus(const vector<Sexp> & selist  ){
       } // if  
 
       else if( selist[i].type != NUMBER )
-        throw RebuildSexp("ERROR (- with incorrect argument type) : ",selist[i]); // 丟錯誤物件 
+        throw Sexp(ERROR,"ERROR (- with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
   } // else
   return Sexp(ERROR,"UNKNOWN FUNCTION ERROR");
@@ -887,7 +880,7 @@ Sexp doMultlipy(const vector<Sexp> & selist  ){
       } // if  
 
       else if( selist[i].type != NUMBER )
-        throw RebuildSexp("ERROR (* with incorrect argument type) : ", selist[i]); // 丟錯誤物件 
+        throw Sexp(ERROR,"ERROR (* with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
   } // else
   return Sexp(ERROR,"UNKNOWN FUNCTION ERROR");
@@ -929,7 +922,7 @@ Sexp doDivide(const vector<Sexp> & selist  ){
       } // if  
 
       else if( selist[i].type != NUMBER )
-        throw RebuildSexp("ERROR (/ with incorrect argument type) : ",selist[i]); // 丟錯誤物件  
+        throw Sexp(ERROR,"ERROR (/ with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
   } // else
   return Sexp(ERROR,"UNKNOWN FUNCTION ERROR");
@@ -986,7 +979,7 @@ Sexp car(const vector<Sexp> & selist  ){ //拿第一個元素
   if( selist.size() != 1 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : car"); // 
   if( selist[0].type != LIST && selist[0].type != PAIR )
-    throw RebuildSexp("ERROR (car with incorrect argument type) : ", selist[0]); // 丟錯誤物件  
+    throw Sexp(ERROR,"ERROR (car with incorrect argument type) : " + selist[0].value); //
   return selist[0].Slist[0];
 } // add
 
@@ -994,7 +987,7 @@ Sexp cdr(const vector<Sexp> & selist  ){ //拿剩下元素
   if( selist.size() != 1 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : cdr"); // 
   if( selist[0].type != LIST && selist[0].type != PAIR )
-    throw RebuildSexp("ERROR (cdr with incorrect argument type) : ", selist[0]); // 丟錯誤物件  
+    throw Sexp(ERROR,"ERROR (cdr with incorrect argument type) : " + selist[0].value); //
 
   bool withdot = false;
   if( selist[0].Slist.size() == 3 && selist[0].type == PAIR ){ // ( 1 . 2 )會把dot稀釋掉，其他情況不會因為dot只能接一個sexp
@@ -1119,7 +1112,7 @@ Sexp greaterThan(const vector<Sexp> & selist  ){
       } // if  
 
       else if( selist[i].type != NUMBER )
-        throw RebuildSexp("ERROR (> with incorrect argument type) : ",selist[i]); // 丟錯誤物件  
+        throw Sexp(ERROR,"ERROR (> with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
   } // if
 
@@ -1150,7 +1143,7 @@ Sexp greaterEqual(const vector<Sexp> & selist  ){
       } // if  
 
       else if( selist[i].type != NUMBER )
-        throw RebuildSexp("ERROR (>= with incorrect argument type) : ",selist[i]); // 丟錯誤物件  
+        throw Sexp(ERROR,"ERROR (>= with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
   } // if
 
@@ -1180,7 +1173,7 @@ Sexp lessThan(const vector<Sexp> & selist  ){
       } // if  
 
       else if( selist[i].type != NUMBER )
-        throw RebuildSexp("ERROR (< with incorrect argument type) : ",selist[i]); // 丟錯誤物件  
+        throw Sexp(ERROR,"ERROR (< with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
   } // if
 
@@ -1210,7 +1203,7 @@ Sexp lessEqual(const vector<Sexp> & selist  ){
       } // if  
 
       else if( selist[i].type != NUMBER )
-        throw RebuildSexp("ERROR (<= with incorrect argument type) : ",selist[i]); // 丟錯誤物件  
+        throw Sexp(ERROR,"ERROR (<= with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
   } // if
 
@@ -1241,7 +1234,7 @@ Sexp isSame(const vector<Sexp> & selist  ){
       } // if  
 
       else if( selist[i].type != NUMBER )
-      throw RebuildSexp("ERROR (= with incorrect argument type) : ",selist[i]); // 丟錯誤物件  
+        throw Sexp(ERROR,"ERROR (= with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
   } // if
 
@@ -1271,7 +1264,7 @@ Sexp stringAppend(const vector<Sexp> & selist  ){ // 第二題告訴我要銜接
       } // if  
 
       else if( selist[i].mtype != STRING )
-        throw RebuildSexp("ERROR (string-append with incorrect argument type) : ",selist[i]); // 丟錯誤物件   
+        throw Sexp(ERROR,"ERROR (string-append with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
   } // if
 
@@ -1294,7 +1287,7 @@ Sexp isStringGreaterThan(const vector<Sexp> & selist  ){
       } // if  
 
       else if( selist[i].mtype != STRING )
-        throw RebuildSexp("ERROR (string>? with incorrect argument type) : ",selist[i]); // 丟錯誤物件  
+        throw Sexp(ERROR,"ERROR (string>? with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
   } // if
 
@@ -1316,7 +1309,7 @@ Sexp isStringLessThan(const vector<Sexp> & selist  ){
       } // if  
 
       else if( selist[i].mtype != STRING )
-        throw RebuildSexp("ERROR (string<? with incorrect argument type) : ",selist[i]); // 丟錯誤物件 
+        throw Sexp(ERROR,"ERROR (string<? with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
   } // if
 
@@ -1338,7 +1331,7 @@ Sexp isStringSame(const vector<Sexp> & selist  ){
       } // if  
 
       else if( selist[i].mtype != STRING )
-        throw RebuildSexp("ERROR (string=? with incorrect argument type) : ",selist[i]); // 丟錯誤物件   
+        throw Sexp(ERROR,"ERROR (string=? with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
   } // if
 
@@ -1814,7 +1807,7 @@ class Evaluate {
         else if( temp.value == "clean-environment" ){ // 同下
           if( ss.Slist.size() == 1 && level == 1){              
             inEnv->clearEnv();
-            throw SignalLight("clean-environment"); //就return
+            return ss; //就return
           } // if
           else if( level != 1)
             throw Sexp(ERROR,"ERROR (level of CLEAN-ENVIRONMENT)");
@@ -1824,7 +1817,7 @@ class Evaluate {
 
         else if( temp.value == "exit" ){   // 3/29變成function
           if( ss.Slist.size() == 1 && level == 1){
-            throw SignalLight("exit"); //就return， 3/29新想法原本的return遇到了quote (exit) 後要列出的是exit，所以用return後兩者相等分不出區別，所以用throw
+            return ss; //就return
           } // if    
           else if( level != 1)
             throw Sexp(ERROR,"ERROR (level of EXIT)");
@@ -1921,24 +1914,25 @@ class Evaluate {
         else if( error.type == ERROR) // 特別處理處理正常型別
           cout << error.value  << endl;
         else if( error.type != ERROR){
-          cout << error.errormessage;
+          cout << error.errormessage  << endl;
           prettyPrint(error,0);
           // 特別處理處理正常型別
         } // else if
         return;
       } // catch
 
-      catch(SignalLight SL) {
-        if( SL.value == "exit"){
+      if( ce.type == LIST && ce.Slist.size() == 1 ){
+        if( ce.Slist[0].value == "exit" ){
           endsignal = 1;
-        } // if        
-        else if( SL.value == "clean-environment"){
+          return;
+        } // if
+
+        else if( ce.Slist[0].value == "clean-environment"){
           ce = Sexp(SYMBOL,STRING,"environment cleaned");
-          prettyPrint(ce,0);
         } // else if
 
-        return;
-      } // catch
+      } // if
+
       prettyPrint(ce,0);
     } // project1
 

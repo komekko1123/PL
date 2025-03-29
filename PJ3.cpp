@@ -1,11 +1,4 @@
-// 啟航日3/19 pj2開始
-// 測試日3/28 pj2到dc測試
-// 完成日3/30 
-// 測試筆記(第一題隱測: cons搭配pair如 ( 1 '(1 . 2 ) )時答案是(1 1 . 2 )不是( 1 . 1 . 2 ) )
-// 第二題是string-append的問題，append string要扣除最前面和最後面的" 如"abc" + "def" ="abcdef" 不是"abc""def"
-// quote和'的不同， '這個要加括號，quote不用加括號，我的天
-// runtimeError of eof卡了2個小時(2-9-2，因為錯誤在最後一行，要讀到換行，但是沒有換行，讀到eof，但eof不是\n，在catch中在拋出一次錯誤後catch catch不到就爆了)
-
+// 啟航日 
 
 #include <stdio.h>
 #include <iostream>
