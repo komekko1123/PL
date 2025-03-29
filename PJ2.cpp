@@ -1,6 +1,12 @@
 // 啟航日3/19 pj2開始
 // 測試日3/28 pj2到dc測試
 
+// 測試筆記(第一題隱測: cons搭配pair如 ( 1 '(1 . 2 ) )時答案是(1 1 . 2 )不是( 1 . 1 . 2 ) )
+// 第二題是string-append的問題，append string要扣除最前面和最後面的" 如"abc" + "def" ="abcdef" 不是"abc""def"
+// quote和'的不同， '這個要加括號，quote不用加括號，我的天
+// runtimeError of eof卡了2個小時(2-9-2，因為錯誤在最後一行，要讀到換行，但是沒有換行，讀到eof，但eof不是\n，在catch中在拋出一次錯誤後catch catch不到就爆了)
+
+
 #include <stdio.h>
 #include <iostream>
 #include <vector>
@@ -89,6 +95,7 @@ enum SexpType{
   LIST,
   FUNCTION_LAMBDA, // 3/25新增()
   PAIR, // 3/28新增()
+  NOTYPE,
 };
 
 
@@ -103,6 +110,13 @@ public:
   int mline;
   int mcolumn;
   Token(){
+    type = NOP;
+    value = "";
+    num = 0;
+    f_num = 0;
+    mline = 0;
+    mcolumn = 0;
+    m_bool = false;
   } // Token()
 
   
@@ -125,6 +139,7 @@ public:
   SexpType type;  
   tokenType mtype;
   string value;
+  string errormessage;
   float number;
   vector<Sexp> Slist;
   vector<string> paras;
@@ -133,11 +148,18 @@ public:
   long uniqueID;  // 3月28日(解決eqv要記憶體位址的問題!!!!!!!)
 
   Sexp(){  
+    type = NOTYPE;
+    mtype = NOP;
+    value = "";
+    number = 0;
+    Slist.clear();
+    paras.clear();
     uniqueID = nextID++;
   } // 3/28
   Sexp(SexpType Stype, string theValue ){
     type = Stype;
     value = theValue;
+    mtype = ERR;
     uniqueID = nextID++;
   } // ERROR用到
 
@@ -145,13 +167,16 @@ public:
     type = Stype;
     paras = parameter;
     uniqueID = nextID++;
+    mtype = NOP;
   } // ERROR用到
 
   Sexp(SexpType Stype, string theValue, vector<Sexp> theList ){
+    number = 0;
     type = Stype;
     value = theValue;
     Slist = theList;
     uniqueID = nextID++;
+    mtype = ERR;
   } // define error用的到
 
 
@@ -159,6 +184,7 @@ public:
     type = Stype;
     Slist = theList;
     uniqueID = nextID++;
+    mtype = NOP;
   } // LIST的模式
 
   Sexp(SexpType Stype, function<Sexp(const vector<Sexp>&)> fptr, string str){
@@ -166,6 +192,7 @@ public:
     type = Stype;
     funptr = fptr;
     uniqueID = nextID++;
+    mtype = NOP;
   } // 指向函數指標
 
 
@@ -175,6 +202,11 @@ public:
     mtype = theMtype;
     if( mtype == INT || mtype == FLOAT ) 
       number = atof(value.c_str()); // 架構怪了atof
+    if( mtype == FLOAT ) {
+      stringstream ss;
+      ss << fixed << setprecision(3) << number;
+      value = ss.str();
+    } // if
     //其他默認symbol
     uniqueID = nextID++;
   } // Sexp()
@@ -450,10 +482,10 @@ public:
     char c = cin.peek();
     while( cin.good() ){ // cin,good的是可以讀的輸入，型別也同
       char c = cin.peek();
-      if ( c != '\n'  ) // until read the \n
-        getTheChar(); // 等同getchar()
+      if ( c == '\n' || c == EOF  ) // until read the \n
+        break; // 等同getchar()
       else
-        break;
+        getTheChar();
     } // while  
   } // encounterError()
 
@@ -658,6 +690,8 @@ bool checkIsINT( const vector<Sexp> & ss ){
     else if ( ss[i].type != NUMBER && ss[i].mtype == INT ){
       return false;
     } // else if
+    else if ( ss[i].type != NUMBER )
+      return false;
   } // for
   return true;  
 } // checkIsINT
@@ -666,7 +700,7 @@ bool checkIsFloat( const vector<Sexp> & ss){ // 先確定過int了代表float就
   for( int i = 0 ; i < ss.size() ; i++ ){
     if ( ss[i].type != NUMBER ){
       return false;
-    } // else if
+    } // if
   } // for
   return true;  
 } // checkIsFloat
@@ -694,6 +728,7 @@ bool checkSexpEqual(const Sexp &a, const Sexp &b){ //其實只是把equal?拿來
       if ( ! checkSexpEqual(a.Slist[i], b.Slist[i]) )
         return false;
     } // for
+    return true;
   } // if
 
   else if( a.mtype == STRING ){
@@ -762,16 +797,16 @@ Sexp doAdd(const vector<Sexp> & selist  ){
   } // else if    
 
   else {
-    vector<Sexp> errorSexp;
-    string str = "ERROR (+ with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
-      if ( selist[i].type != NUMBER ){
-        errorSexp.push_back(selist[i]);
-        break;
-      } // else if  
+      if ( selist[i].type != NUMBER && ( selist[i].type == LIST || selist[i].type == PAIR ) ){
+        throw Sexp(ERROR,"ERROR (+ with incorrect argument type) : ", selist[i].Slist);
+      } // if  
+
+      else if( selist[i].type != NUMBER )
+        throw Sexp(ERROR,"ERROR (+ with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
-    throw Sexp(ERROR,"ERROR (+ with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // else
+  return Sexp(ERROR,"UNKNOWN FUNCTION ERROR");
 } // add
 
 Sexp doMinus(const vector<Sexp> & selist  ){
@@ -797,16 +832,16 @@ Sexp doMinus(const vector<Sexp> & selist  ){
   } // else if    
 
   else {
-    vector<Sexp> errorSexp;
-    string str = "ERROR (- with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
-      if ( selist[i].type != NUMBER ){
-        errorSexp.push_back(selist[i]);
-        break;
-      } // else if  
+      if ( selist[i].type != NUMBER && ( selist[i].type == LIST || selist[i].type == PAIR ) ){
+        throw Sexp(ERROR,"ERROR (- with incorrect argument type) : ", selist[i].Slist);
+      } // if  
+
+      else if( selist[i].type != NUMBER )
+        throw Sexp(ERROR,"ERROR (- with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
-    throw Sexp(ERROR,"ERROR (- with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // else
+  return Sexp(ERROR,"UNKNOWN FUNCTION ERROR");
 } // minus
 
 Sexp doMultlipy(const vector<Sexp> & selist  ){
@@ -831,17 +866,17 @@ Sexp doMultlipy(const vector<Sexp> & selist  ){
     return Sexp(NUMBER,FLOAT,ss.str());
   } // else if    
 
-  else {
-    vector<Sexp> errorSexp;
-    string str = "ERROR (* with incorrect argument type) : ";
+  else { // 可以是nil不能是string
     for(int i = 0 ; i < selist.size(); i++){
-      if ( selist[i].type != NUMBER ){
-        errorSexp.push_back(selist[i]);
-        break;
-      } // else if  
+      if ( selist[i].type != NUMBER && ( selist[i].type == LIST || selist[i].type == PAIR ) ){
+        throw Sexp(ERROR,"ERROR (* with incorrect argument type) : ", selist[i].Slist);
+      } // if  
+
+      else if( selist[i].type != NUMBER )
+        throw Sexp(ERROR,"ERROR (* with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
-    throw Sexp(ERROR,"ERROR (* with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // else
+  return Sexp(ERROR,"UNKNOWN FUNCTION ERROR");
 } // multlipy
 
 Sexp doDivide(const vector<Sexp> & selist  ){
@@ -874,22 +909,22 @@ Sexp doDivide(const vector<Sexp> & selist  ){
   } // else if    
 
   else {
-    vector<Sexp> errorSexp;
-    string str = "ERROR (/ with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
-      if ( selist[i].type != NUMBER ){
-        errorSexp.push_back(selist[i]);
-        break;
-      } // else if  
+      if ( selist[i].type != NUMBER && ( selist[i].type == LIST || selist[i].type == PAIR ) ){
+        throw Sexp(ERROR,"ERROR (/ with incorrect argument type) : ", selist[i].Slist);
+      } // if  
+
+      else if( selist[i].type != NUMBER )
+        throw Sexp(ERROR,"ERROR (/ with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
-    throw Sexp(ERROR,"ERROR (/ with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // else
+  return Sexp(ERROR,"UNKNOWN FUNCTION ERROR");
 } // divide
 
 
 Sexp isNot(const vector<Sexp> & selist  ){
   if( selist.size() != 1  )
-    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : Not"); // 
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : not"); // 
   if( selist[0].mtype != NIL)
     return Sexp(SYMBOL, NIL, "nil");
   else
@@ -897,14 +932,22 @@ Sexp isNot(const vector<Sexp> & selist  ){
 } // isNot
 
 
-Sexp cons(const vector<Sexp> & selist  ){
+Sexp cons(const vector<Sexp> & selist  ){ // 3/29 ERROR (level of CLEAN-ENVIRONMENT)抓到原因了。原因就是
   if( selist.size() != 2 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : cons"); // 
   vector<Sexp> temp;
   temp.push_back(selist[0]);
+  
   if( selist[1].value == "()" || selist[1].value == "nil" || selist[1].value == "#f" || selist[1].mtype == NIL )
     return Sexp(LIST,temp);
-  else{
+  else if ( selist[1].type == LIST || selist[1].type == PAIR ) {
+    for( int i = 0 ; i < selist[1].Slist.size() ; i++){
+      temp.push_back(selist[1].Slist[i]);  
+    } // for
+    return Sexp(LIST,temp); // 3/28 improper list
+  } // else
+
+  else {
     Sexp dotSexp = Sexp(SYMBOL,DOT,".");
     temp.push_back(dotSexp);
     temp.push_back(selist[1]);
@@ -929,15 +972,15 @@ Sexp car(const vector<Sexp> & selist  ){ //拿第一個元素
   if( selist.size() != 1 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : car"); // 
   if( selist[0].type != LIST && selist[0].type != PAIR )
-    throw Sexp(ERROR,"ERROR (car with incorrect argument type) : ", selist); //
+    throw Sexp(ERROR,"ERROR (car with incorrect argument type) : " + selist[0].value); //
   return selist[0].Slist[0];
 } // add
 
 Sexp cdr(const vector<Sexp> & selist  ){ //拿剩下元素
   if( selist.size() != 1 )
-    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : cons"); // 
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : cdr"); // 
   if( selist[0].type != LIST && selist[0].type != PAIR )
-    throw Sexp(ERROR,"ERROR (cdr with incorrect argument type) : ", selist); //
+    throw Sexp(ERROR,"ERROR (cdr with incorrect argument type) : " + selist[0].value); //
 
   bool withdot = false;
   if( selist[0].Slist.size() == 3 && selist[0].type == PAIR ){ // ( 1 . 2 )會把dot稀釋掉，其他情況不會因為dot只能接一個sexp
@@ -1056,15 +1099,14 @@ Sexp greaterThan(const vector<Sexp> & selist  ){
   if( selist.size() < 2 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : >"); //
   if( ! checkIsFloat(selist) ){
-    vector<Sexp> errorSexp;
-    string str = "ERROR (> with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
-      if ( selist[i].type != NUMBER ){
-        errorSexp.push_back(selist[i]);
-        break;
-      } // else if  
+      if ( selist[i].type != NUMBER && ( selist[i].type == LIST || selist[i].type == PAIR ) ){
+        throw Sexp(ERROR,"ERROR (> with incorrect argument type) : ", selist[i].Slist);
+      } // if  
+
+      else if( selist[i].type != NUMBER )
+        throw Sexp(ERROR,"ERROR (> with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
-    throw Sexp(ERROR,"ERROR (> with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // if
 
   if( checkIsINT(selist) == true ){
@@ -1088,15 +1130,14 @@ Sexp greaterEqual(const vector<Sexp> & selist  ){
   if( selist.size() < 2 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : >="); //
   if( ! checkIsFloat(selist) ){
-    vector<Sexp> errorSexp;
-    string str = "ERROR (>= with incorrect argument type) : ";
-    for(int i = 0 ; i < selist.size() ; i++){
-      if ( selist[i].type != NUMBER ){
-        errorSexp.push_back(selist[i]);
-        break;
-      } // else if  
+    for(int i = 0 ; i < selist.size(); i++){
+      if ( selist[i].type != NUMBER && ( selist[i].type == LIST || selist[i].type == PAIR ) ){
+        throw Sexp(ERROR,"ERROR (>= with incorrect argument type) : ", selist[i].Slist);
+      } // if  
+
+      else if( selist[i].type != NUMBER )
+        throw Sexp(ERROR,"ERROR (>= with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
-    throw Sexp(ERROR,"ERROR (>= with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // if
 
   if( checkIsINT(selist) == true ){
@@ -1119,15 +1160,14 @@ Sexp lessThan(const vector<Sexp> & selist  ){
   if( selist.size() < 2 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : <"); //
   if( ! checkIsFloat(selist) ){
-    vector<Sexp> errorSexp;
-    string str = "ERROR (< with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
-      if ( selist[i].type != NUMBER ){
-        errorSexp.push_back(selist[i]);
-        break;
-      } // else if  
+      if ( selist[i].type != NUMBER && ( selist[i].type == LIST || selist[i].type == PAIR ) ){
+        throw Sexp(ERROR,"ERROR (< with incorrect argument type) : ", selist[i].Slist);
+      } // if  
+
+      else if( selist[i].type != NUMBER )
+        throw Sexp(ERROR,"ERROR (< with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
-    throw Sexp(ERROR,"ERROR (< with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // if
 
   if( checkIsINT(selist) == true ){
@@ -1150,15 +1190,14 @@ Sexp lessEqual(const vector<Sexp> & selist  ){
   if( selist.size() < 2 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : <="); //
   if( ! checkIsFloat(selist) ){
-    vector<Sexp> errorSexp;
-    string str = "ERROR (<= with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
-      if ( selist[i].type != NUMBER ){
-        errorSexp.push_back(selist[i]);
-        break;
-      } // else if  
+      if ( selist[i].type != NUMBER && ( selist[i].type == LIST || selist[i].type == PAIR ) ){
+        throw Sexp(ERROR,"ERROR (<= with incorrect argument type) : ", selist[i].Slist);
+      } // if  
+
+      else if( selist[i].type != NUMBER )
+        throw Sexp(ERROR,"ERROR (<= with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
-    throw Sexp(ERROR,"ERROR (<= with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // if
 
   if( checkIsINT(selist) == true ){
@@ -1182,15 +1221,14 @@ Sexp isSame(const vector<Sexp> & selist  ){
   if( selist.size() < 2 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : ="); //
   if( ! checkIsFloat(selist) ){
-    vector<Sexp> errorSexp;
-    string str = "ERROR (= with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
-      if ( selist[i].type != NUMBER ){
-        errorSexp.push_back(selist[i]);
-        break;
-      } // else if  
+      if ( selist[i].type != NUMBER && ( selist[i].type == LIST || selist[i].type == PAIR ) ){
+        throw Sexp(ERROR,"ERROR (= with incorrect argument type) : ", selist[i].Slist);
+      } // if  
+
+      else if( selist[i].type != NUMBER )
+        throw Sexp(ERROR,"ERROR (= with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
-    throw Sexp(ERROR,"ERROR (= with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // if
 
   if( checkIsINT(selist) == true ){
@@ -1209,24 +1247,26 @@ Sexp isSame(const vector<Sexp> & selist  ){
   return Sexp(SYMBOL,T,"#t");
 } // add
 
-Sexp stringAppend(const vector<Sexp> & selist  ){
+Sexp stringAppend(const vector<Sexp> & selist  ){ // 第二題告訴我要銜接時要扣除後面跟前面的"
   if( selist.size() < 2 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : string-append"); //
   if( ! checkIsString(selist) ){
-    vector<Sexp> errorSexp;
-    string str = "ERROR (string-append with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
-      if ( selist[i].mtype != STRING ){
-        errorSexp.push_back(selist[i]);
-        break;
-      } // else if  
+      if ( selist[i].mtype != STRING && ( selist[i].type == LIST || selist[i].type == PAIR ) ){
+        throw Sexp(ERROR,"ERROR (string-append with incorrect argument type) : ", selist[i].Slist);
+      } // if  
+
+      else if( selist[i].mtype != STRING )
+        throw Sexp(ERROR,"ERROR (string-append with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
-    throw Sexp(ERROR,"ERROR (string-append with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // if
 
-  string str = "";
-  for( int i = 0; i < selist.size() - 1 ; i++ )
-    str = str + selist[i].value;
+  string str = selist[0].value;
+  for( int i = 1; i < selist.size() ; i++ ){
+    str = str.substr(0, str.size()-1); // 扣除最後的"
+    string str2 = selist[i].value.substr(1, selist[i].value.size()); // 扣除最前面的"
+    str = str + str2;
+  } // for
   return Sexp(SYMBOL,STRING,str);
 } // add
 
@@ -1234,15 +1274,14 @@ Sexp isStringGreaterThan(const vector<Sexp> & selist  ){
   if( selist.size() < 2 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : string>?"); //
   if( ! checkIsString(selist) ){
-    vector<Sexp> errorSexp;
-    string str = "ERROR (string>? with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
-      if ( selist[i].mtype != STRING ){
-        errorSexp.push_back(selist[i]);
-        break;
-      } // else if  
+      if ( selist[i].mtype != STRING && ( selist[i].type == LIST || selist[i].type == PAIR ) ){
+        throw Sexp(ERROR,"ERROR (string>? with incorrect argument type) :", selist[i].Slist);
+      } // if  
+
+      else if( selist[i].mtype != STRING )
+        throw Sexp(ERROR,"ERROR (string>? with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
-    throw Sexp(ERROR,"ERROR (string>? with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // if
 
   for( int i = 0; i < selist.size() - 1 ; i++ ){
@@ -1257,15 +1296,14 @@ Sexp isStringLessThan(const vector<Sexp> & selist  ){
   if( selist.size() < 2 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : string<?"); //
   if( ! checkIsString(selist) ){
-    vector<Sexp> errorSexp;
-    string str = "ERROR (string<? with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
-      if ( selist[i].mtype != STRING ){
-        errorSexp.push_back(selist[i]);
-        break;
-      } // else if  
+      if ( selist[i].mtype != STRING && ( selist[i].type == LIST || selist[i].type == PAIR ) ){
+        throw Sexp(ERROR,"ERROR (string<? with incorrect argument type) :", selist[i].Slist);
+      } // if  
+
+      else if( selist[i].mtype != STRING )
+        throw Sexp(ERROR,"ERROR (string<? with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
-    throw Sexp(ERROR,"ERROR (string<? with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // if
 
   for( int i = 0; i < selist.size() - 1 ; i++ ){
@@ -1280,15 +1318,14 @@ Sexp isStringSame(const vector<Sexp> & selist  ){
   if( selist.size() < 2 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : string=?"); //
   if( ! checkIsString(selist) ){
-    vector<Sexp> errorSexp;
-    string str = "ERROR (string=? with incorrect argument type) : ";
     for(int i = 0 ; i < selist.size(); i++){
-      if ( selist[i].mtype != STRING ){
-        errorSexp.push_back(selist[i]);
-        break;
-      } // else if  
+      if ( selist[i].mtype != STRING && ( selist[i].type == LIST || selist[i].type == PAIR ) ){
+        throw Sexp(ERROR,"ERROR (string=? with incorrect argument type) :", selist[i].Slist);
+      } // if  
+
+      else if( selist[i].mtype != STRING )
+        throw Sexp(ERROR,"ERROR (string=? with incorrect argument type) : " + selist[i].value ); // 丟錯誤物件  
     } // for
-    throw Sexp(ERROR,"ERROR (string=? with incorrect argument type) : ",errorSexp); // 丟錯誤物件
   } // if
 
   for( int i = 0; i < selist.size() - 1 ; i++ ){
@@ -1364,7 +1401,57 @@ Sexp isEqual(const vector<Sexp> & selist  ){
     return Sexp(SYMBOL,NIL,"nil"); 
 } // isEqual  
 
+Sexp isQuote(const vector<Sexp> & selist ){
+  if( selist.size() != 1 )
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : quote?"); 
+  return selist[0];
+} // 
 
+Sexp doExit(const vector<Sexp> & selist){ // 這是想到的寫法(把正解寫在計算中，所以跑到這=錯誤的level)
+  throw Sexp(ERROR,"(level of EXIT)"); // 丟錯誤物件  
+} // doExit
+
+Sexp doCleanEnviron(const vector<Sexp> & selist){ //  3/29這是想到的寫法(把正解寫在計算中，所以跑到這=錯誤的level)
+  throw Sexp(ERROR,"ERROR (level of CLEAN-ENVIRONMENT)"); // 丟錯誤物件
+} // doExit
+
+bool expectedFunctionArgcNum( Sexp fun,int argcSize ) {
+  if( fun.value == "+" || fun.value == "-" || fun.value == "*" || fun.value == "/" || fun.value == ">" 
+      || fun.value == ">=" || fun.value == "<" || fun.value == "<=" || fun.value == "=" || fun.value == "string-append"
+      ||  fun.value == "string<?" ||  fun.value == "string>?" ||  fun.value == "string=?" ) { // +-*/
+    if( argcSize < 2)
+      return false;
+    else  
+      return true;
+  } // if
+
+  else if( fun.value == "car" || fun.value == "cdr" || fun.value == "atom?" || fun.value == "pair?" 
+           || fun.value == "list?" || fun.value == "null?" || fun.value == "integer?" || fun.value == "real?" 
+           || fun.value == "number?" || fun.value == "string?" || fun.value == "boolean?" || fun.value == "symbol?" 
+           || fun.value == "not"  || fun.value == "quote") {
+    if( argcSize != 1)
+      return false;
+    else  
+      return true;
+  } // else if
+
+  else if( fun.value == "cons" || fun.value == "eqv?" || fun.value == "equal?") {
+    if( argcSize != 2)
+      return false;
+    else  
+      return true;
+  } // else if
+
+  else if( fun.value == "list" ) {
+    return true;
+  } // else if
+
+  else{
+    cout << "可能要除錯";
+    return false;
+  } // else
+    
+} // expectedFunctionArgcNum
 
 class Environ{ //設計是這是變數的放置區，
   public:  
@@ -1404,7 +1491,7 @@ class Environ{ //設計是這是變數的放置區，
       env["boolean?"] = Sexp(FUNCTION, predictBoolean, "boolean?");
       env["symbol?"] = Sexp(FUNCTION, predictSymbol, "symbol?");
       // 6. Basic arithmetic, logical and string operations
-      env["+"] = Sexp(FUNCTION, doAdd, "add");
+      env["+"] = Sexp(FUNCTION, doAdd, "+");
       env["-"] = Sexp(FUNCTION, doMinus, "-");
       env["*"] = Sexp(FUNCTION, doMultlipy, "*");
       env["/"] = Sexp(FUNCTION, doDivide, "/");
@@ -1419,7 +1506,13 @@ class Environ{ //設計是這是變數的放置區，
       env["string<?"] = Sexp(FUNCTION, isStringLessThan, "string<?");
       env["string=?"] = Sexp(FUNCTION, isStringSame, "string=?");
       // 7. Eqivalence tester
+      env["eqv?"] = Sexp(FUNCTION, isEqv, "eqv?");
+      env["equal?"] = Sexp(FUNCTION, isEqual, "equal?");
       env["not"] = Sexp(FUNCTION, isNot, "not");
+      // 3/29新增(把下面兩者寫成function)
+      env["clean-environment"] = Sexp(FUNCTION, doCleanEnviron, "clean-environment");
+      env["exit"] = Sexp(FUNCTION, doExit, "exit");
+      env["quote"] = Sexp(FUNCTION, isQuote, "quote"); // quote寫成function
     } // buildinFunction 
   
     void doTheDefine(string str, Sexp arg){
@@ -1437,7 +1530,7 @@ class Environ{ //設計是這是變數的放置區，
         return Parent->retrieveEnv(arg);  
       } //else if
       else
-        throw Sexp(ERROR,"ERROR (Unbound Symbol)"); 
+        throw Sexp(ERROR,"ERROR (unbound symbol) : " + arg.value); 
     } // doTheDefine
   
     void updateEnv( string str, Sexp arg ){
@@ -1447,7 +1540,7 @@ class Environ{ //設計是這是變數的放置區，
         return Parent->updateEnv(str,arg);  
       } //else if
       else
-        throw Sexp(ERROR,"ERROR (Unbound Symbol)"); // updating error
+        throw Sexp(ERROR,"ERROR (unbound symbol) : " + str ); // updating error
     } // retrieveEnv
     
     void clearEnv(){ //應該是清除後放入buildinFunc就好
@@ -1466,307 +1559,327 @@ class Environ{ //設計是這是變數的放置區，
   
 class Evaluate {
   public:
-    Sexp sTree; // 這個是存好的SexpTree  
+    Sexp sTree; // 這個是存好的SexpTree
+    int level; // 3/29新增，處理這個錯誤ERROR (level of CLEAN-ENVIRONMENT)
     void setSexp( Sexp exp){
       sTree = exp;
+      level = 0;
     } // setTable
   
-    Sexp evaluting( Environ * inEnv, Sexp ss ){ 
-      try{ 
-        if( ss.mtype == NIL || ss.mtype == T || ss.mtype == STRING || ss.type == NUMBER || ss.type == ERROR
-                            || ss.type == FUNCTION  || ss.type == FUNCTION_LAMBDA  ) // 寫PROJECT 1以為這些也可以變形，難受了，不知道要不要FUNCTION
-          return ss; 
-        else if( ss.type == SYMBOL ){ //拿symbol，dot可能會有bug
-          return inEnv->retrieveEnv(ss);
+    Sexp evaluting( Environ * inEnv, Sexp ss ){  // 3/29改掉在這一層try-catch會使錯誤在遞迴時被接收導致收不到錯誤。
+      level++;
+      if( ss.mtype == NIL || ss.mtype == T || ss.mtype == STRING || ss.type == NUMBER || ss.type == ERROR
+                          || ss.type == FUNCTION  || ss.type == FUNCTION_LAMBDA  ) // 寫PROJECT 1以為這些也可以變形，難受了，不知道要不要FUNCTION
+        return ss; 
+      else if( ss.type == SYMBOL ){ //拿symbol，dot可能會有bug
+        return inEnv->retrieveEnv(ss);
+      } // if
+
+      else if( ss.type == LIST ){ // 這邊有特殊形式(ai說有)quote,define,lambda,set!,and,or,begin,if,cond,let的function不能先求值，剩下的就要傳參後傳值
+        if( ss.Slist.size() == 0) // 為什麼list函數可以接受空list!!!!!!!!!
+          return Sexp(SYMBOL,NIL,"nil");
+        Sexp temp = ss.Slist[0];
+        // special function
+        if( temp.mtype == QUOTE ) // QUOTE就拿下一個Sexp
+          return ss.Slist[1];
+        else if( temp.value == "define" ){ // define語句 define a  b(body)
+          if( level != 1 ){ //3/29第8題
+            throw Sexp(ERROR,"ERROR (level of DEFINE)");
+          } // if
+
+          if( ss.Slist.size() != 3 ) // define 參數量 = 2 ==> 就是2是define symbol，3是 
+            throw Sexp(ERROR,"ERROR (DEFINE format) : ", ss.Slist);
+          if( ss.Slist[1].type == SYMBOL ){ // 定義SYMBOL
+            if( isReservedWord(ss.Slist[1].value) ){
+              throw Sexp(ERROR,"ERROR (DEFINE format) : ", ss.Slist); //碰到保留字了 不知道要回傳list還是錯誤的保留字
+            } // if
+
+            ss.Slist[2] = evaluting(inEnv,ss.Slist[2]); // 不知道可不可以這樣寫。
+            inEnv->doTheDefine(ss.Slist[1].value,ss.Slist[2]);
+            ss.Slist[1].value += " defined";
+            return ss.Slist[1]; //返回這個symbol印出a defined。
+            //印出a defined;
+          } // if
+
+          else if( ss.Slist[1].type == LIST ){ // 定義FUNCTION (define (a b) 2) => (define a ( lambda (b) 2) ) 要改語法
+            if( ss.Slist[1].Slist.size() == 0 || ss.Slist[1].Slist[0].type != SYMBOL ){ // 應該不會有這種狀況存在
+              throw Sexp(ERROR,"ERROR (DEFINE format) : ", ss.Slist); //碰到保留字了 不知道要回傳list還是錯誤的保留字
+            } // if
+            
+            vector<string> parameters;
+            for( int i = 1 ; i < ss.Slist[1].Slist.size() ; i++){
+              if(  ss.Slist[1].Slist[i].type == SYMBOL && ( ! isReservedWord( ss.Slist[1].Slist[i].value )) ){ // 應該不會有這種狀況存在
+                throw Sexp(ERROR,"ERROR (DEFINE format) : ", ss.Slist); //碰到保留字了 不知道要回傳list還是錯誤的保留字
+              } // if
+              parameters.push_back( ss.Slist[1].Slist[i].value ); //放入parameter
+            } // for 
+            
+            Sexp changetoLambdaExpr = Sexp(FUNCTION_LAMBDA,parameters);
+            changetoLambdaExpr.Slist.push_back(evaluting(inEnv,ss.Slist[2])); // 放body
+            changetoLambdaExpr.value = ss.Slist[1].Slist[0].value; 
+            inEnv->doTheDefine(ss.Slist[1].Slist[0].value, changetoLambdaExpr.Slist[0]);
+            return changetoLambdaExpr;
+            //印出producured a defined;
+          } // else if
+
+          else
+            throw Sexp(ERROR,"ERROR (DEFINE format) : ", ss.Slist); // 如果是list定義的是function那字元，只會是symbol or func其他都是err
+        } // define
+        else if( temp.value == "lambda" ){ // lambda這個有夠難處理，計畫中打算先讓他變成function然後要呼叫他時把，list to body，並加上args
+          if( ss.Slist.size() < 3 ) // lambda 參數量最少要有三個 => lambda () exp~~ 
+            throw Sexp(ERROR,"ERROR (lambda format) : ", ss.Slist);
+          ss.type = FUNCTION_LAMBDA; 
+          vector<string> parameters;
+          if( ss.Slist[1].type == LIST ){
+            if( ss.Slist[1].Slist.size() == 0 ){
+              ss.Slist[1].type = SYMBOL;
+              ss.Slist[1].mtype = NIL;
+              ss.Slist[1].value = "nil";
+            } // if
+            
+            else { // 很多args
+              for( int i = 0 ; i < ss.Slist[1].Slist.size(); i++){
+                if( ss.Slist[1].Slist[i].type != SYMBOL || isReservedWord(ss.Slist[1].Slist[i].value )  ){
+                  throw Sexp(ERROR,"ERROR (LAMBDA format) : ", ss.Slist);
+                } // if
+                parameters.push_back(ss.Slist[1].Slist[i].value);
+              } // for
+              ss.paras = parameters;
+            } // else
+          } // if
+
+          else if( ss.Slist[1].mtype != NIL) // 不是列表或是nil 就是error了
+            throw Sexp(ERROR,"ERROR (LAMBDA format) : ", ss.Slist);
+          
+          vector<Sexp> lambdaBody;
+          for( int i = 2 ; i < ss.Slist.size() ; i++){
+            lambdaBody.push_back(ss.Slist[i]);
+          } // 開始存Sexp(這是body的成分)
+          Sexp tempsexp = Sexp(LIST,lambdaBody); // 為了存body在slist裡面但是又不想要毀掉結構(其實是不知道怎麼在class加入自己)，所以方法時把slist存body一個sexp在讓其展開。
+          ss.Slist.clear();
+          ss.Slist.push_back(tempsexp);
+          return ss;           
+        } // else if 
+
+        else if( temp.value == "set!" ){ // set!
+          if( ss.Slist.size() < 3 ){
+            throw Sexp(ERROR,"ERROR (incorrect number of arguments) : set!", ss.Slist);
+          } // if
+
+          if( ss.Slist[1].type != SYMBOL )
+            throw Sexp(ERROR,"ERROR (Set! format) : ", ss.Slist);
+          ss.Slist[2] = evaluting( inEnv, ss.Slist[2]);
+          inEnv->doTheDefine(ss.Slist[1].value, ss.Slist[2]);
+          return ss.Slist[2];
+        } // else if
+
+        else if( temp.value == "cond" ){ // cond語法(cond (條件 exp1 exp2) (條件2 exp~)(最後條件如果是else的話(全false才執行) exp!) )
+          if( ss.Slist.size() < 2 ){
+            throw Sexp(ERROR,"ERROR (COND format) : ", ss.Slist);
+          } // if
+
+          for( int i = 1 ; i < ss.Slist.size() ; i++){ // 先檢查型式在開始計算
+            if( ss.Slist[i].type != LIST ){
+              throw Sexp(ERROR,"ERROR (COND format) : ", ss.Slist);
+            } //if
+
+            if( ss.Slist[i].Slist.size() <= 1) // 如果只有(條件)沒有exp的話
+              throw Sexp(ERROR,"ERROR (COND format) : ", ss.Slist);
+          } // for
+
+          for( int i = 1 ; i < ss.Slist.size() ; i++){
+            if( i == ss.Slist.size() -1 ){ // 這代表著要看else表達式，這段感覺寫得很冗餘
+                if( ss.Slist[i].Slist[0].value == "else" || ss.Slist[i].Slist[0].value == "\"else\""){ // 如果已經是else的話就不要計算(因為會unbound symbol沒有的話，要計算條件)
+                  for( int j = 1 ; j < ss.Slist[i].Slist.size() ; j++ ){ // 內部list
+                    if( j == ss.Slist[i].Slist.size()-1 ){ // 條件句
+                      return evaluting(inEnv,ss.Slist[i].Slist[j]);
+                    } // if
+    
+                    else // 不是最後就do the 計算
+                      evaluting(inEnv,ss.Slist[i].Slist[j]); 
+                  } // for
+                } // if
+            } // if
+
+            Sexp tempNode  = evaluting(inEnv, ss.Slist[i].Slist[0]);
+            if( tempNode.mtype == NIL ) // 就不執行條件句false
+              continue;
+
+            for( int j = 1 ; j < ss.Slist[i].Slist.size() ; j++ ){ // 內部list
+              if( j == ss.Slist[i].Slist.size()-1 ){ // 條件句
+                return evaluting(inEnv,ss.Slist[i].Slist[j]);
+              } // if
+
+              else // 不是最後就do the 計算
+                evaluting(inEnv,ss.Slist[i].Slist[j]); 
+            } // for
+          } // for
+
+          throw Sexp(ERROR,"ERROR (no return value) : ",ss.Slist);
+        } // else if 
+
+        else if( temp.value == "if" ){ // ( if pred expr1 expr2) (if pred expr1)
+          if( ss.Slist.size() < 3 || ss.Slist.size() > 4  ){
+            throw Sexp(ERROR,"ERROR (incorrect number of arguments) : if");
+          } // if
+          
+          Sexp tempNode = evaluting(inEnv,ss.Slist[1]); // pred
+          if( tempNode.mtype != NIL){
+            return evaluting(inEnv, ss.Slist[2]);
+          } // if
+
+          else{
+            if( ss.Slist.size() == 4 ){
+              return evaluting(inEnv, ss.Slist[3]);
+            } // if
+            else
+              throw Sexp(ERROR,"ERROR (no return value) : ", ss.Slist);
+          } // else
+        } // else if 
+
+        else if( temp.value == "let" ){ // let語法 (let (( symbol1 sexp1 )(sym2 sexp2) ...) body1 body2)
+          if( ss.Slist.size() < 3  || ss.Slist[1].type != LIST ) // let 參數量最少要有三個 => let (symbol sexp) body1 
+            throw Sexp(ERROR,"ERROR (let format) : ", ss.Slist);  
+          vector<string> symbol_string;
+          vector<Sexp> SexpValues;
+          for( int i = 0 ; i < ss.Slist[1].Slist.size() ; i++){ // (( symbol1 sexp1 )(sym2 sexp2) ...)
+            if( ss.Slist[1].Slist[i].type != LIST || ss.Slist[1].Slist[i].Slist.size() != 2 || ss.Slist[1].Slist[i].Slist[0].type != SYMBOL )
+              throw Sexp(ERROR,"ERROR (let format) : ", ss.Slist);  
+            if( isReservedWord( ss.Slist[1].Slist[i].Slist[0].value ) )
+              throw Sexp(ERROR,"ERROR (let format) : ", ss.Slist);  
+            symbol_string.push_back( ss.Slist[1].Slist[i].Slist[0].value);
+            SexpValues.push_back( evaluting(inEnv,ss.Slist[1].Slist[i].Slist[1]) );
+          } // for
+
+          Environ * localVar = new Environ(inEnv); // 放入LocalVariable去定義
+          for(int i = 0 ; i < symbol_string.size() ; i++){
+            localVar->doTheDefine(symbol_string[i],SexpValues[i]);
+          } // for
+
+          for(int i = 2; i < ss.Slist.size() ; i++ ){
+            if( i == ss.Slist.size()-1 )
+              return evaluting(localVar, ss.Slist[i]);
+            evaluting(localVar, ss.Slist[i]);
+          } // for
+        } // else if 
+
+        else if( temp.value == "and" ){ // and語法 (and expr1 expr2遇到nil就停，沒有就回傳最後一個值)
+          if( ss.Slist.size() < 2  ) // and 參數量最少要有二個 => and expr1
+            throw Sexp(ERROR,"ERROR (and format) : ", ss.Slist); 
+          for( int i = 1 ; ss.Slist.size() ; i++){
+            ss.Slist[i] = evaluting(inEnv, ss.Slist[i]);
+            if( ss.Slist[i].mtype == NIL)
+              return Sexp(SYMBOL,NIL,"nil");
+            else if( i == ss.Slist.size() - 1 )
+              return ss.Slist[i];
+          } // for
+        } // else if
+
+        else if( temp.value == "or" ){ // or語法 反向and ( or expr1 expr2遇到不是nil就停，沒有就回傳最後一個值)
+          if( ss.Slist.size() < 2  ) // or 參數量最少要有二個 => or expr1
+            throw Sexp(ERROR,"ERROR (or format) : ", ss.Slist);   
+          for( int i = 1 ; ss.Slist.size() ; i++){
+            ss.Slist[i] = evaluting(inEnv, ss.Slist[i]);
+            if( ss.Slist[i].mtype != NIL)
+              return ss.Slist[i];
+            else if( i == ss.Slist.size() - 1 )
+              return ss.Slist[i];
+          } // for
+        } // else if 
+
+        else if( temp.value == "begin" ){ // begin語法 begin expr1 expr2然後返回最後一個expr，就begin卻返回最後??
+          if( ss.Slist.size() < 2  ) // begin 參數量最少要有二個 => or expr1
+            throw Sexp(ERROR,"ERROR (incorrect number of arguments) : begin");       
+          for( int i = 1 ; ss.Slist.size() ; i++){
+            ss.Slist[i] = evaluting(inEnv, ss.Slist[i]);
+            if( i == ss.Slist.size() - 1 )
+              return ss.Slist[i];
+          } // for
+        } // else if 
+
+        else if( temp.value == "clean-environment" ){ // 同下
+          if( ss.Slist.size() == 1 && level == 1){              
+            inEnv->clearEnv();
+            return ss; //就return
+          } // if
+          else if( level != 1)
+            throw Sexp(ERROR,"ERROR (level of CLEAN-ENVIRONMENT)");
+          else 
+            throw Sexp(ERROR,"ERROR (incorrect number of arguments) : clean-environment");        
+        }  // else if 
+
+        else if( temp.value == "exit" ){   // 3/29變成function
+          if( ss.Slist.size() == 1 && level == 1){
+            return ss; //就return
+          } // if    
+          else if( level != 1)
+            throw Sexp(ERROR,"ERROR (level of EXIT)");
+          else 
+            throw Sexp(ERROR,"ERROR (incorrect number of arguments) : exit");  
+        }  // else if 
+        
+        // normal function
+        temp = evaluting(inEnv,temp); // 這可能是個symbol，變成function形式
+        vector<Sexp> argc;
+        if( temp.type == FUNCTION ){
+          bool expectArgument = expectedFunctionArgcNum(temp,ss.Slist.size()-1) ;  
+          if( expectArgument == false ){
+            if( ss.Slist.size() > 1 ){ // 太多要改了，所以讓拋錯誤這一段交給function處理，處理方法是放入沒有計算的，然後就會因為數量err了
+              for(int i = 1 ; i < ss.Slist.size() ; i++ ){
+                argc.push_back(ss.Slist[i]);
+              } // for
+            } // if
+          } // if
+          
+          else {
+            if( temp.value == "quote"){
+              return ss.Slist[1]; 
+            } // if
+
+            if( ss.Slist.size() > 1 ){
+              for(int i = 1 ; i < ss.Slist.size() ; i++ ){
+                ss.Slist[i] = evaluting(inEnv,ss.Slist[i]);
+                argc.push_back(ss.Slist[i]);
+              } // for
+            } // if
+          } // else
+
+          return temp.funptr(argc);
         } // if
 
-        else if( ss.type == LIST ){ // 這邊有特殊形式(ai說有)quote,define,lambda,set!,and,or,begin,if,cond,let的function不能先求值，剩下的就要傳參後傳值
-          if( ss.Slist.size() == 0) // 為什麼list函數可以接受空list!!!!!!!!!
-            return Sexp(SYMBOL,NIL,"nil");
-          Sexp temp = ss.Slist[0];
-          // special function
-          if( temp.mtype == QUOTE ) // QUOTE就拿下一個Sexp
-            return ss.Slist[1];
-          else if( temp.value == "define" ){ // define語句 define a  b(body)
-            if( ss.Slist.size() != 3 ) // define 參數量 = 2 ==> 就是2是define symbol，3是 
-              throw Sexp(ERROR,"ERROR (DEFINE format) : ", ss.Slist);
-            if( ss.Slist[1].type == SYMBOL ){ // 定義SYMBOL
-              if( isReservedWord(ss.Slist[1].value) ){
-                throw Sexp(ERROR,"ERROR (DEFINE format) : ", ss.Slist); //碰到保留字了 不知道要回傳list還是錯誤的保留字
-              } // if
+        else if( temp.type == FUNCTION_LAMBDA){
+          if( ss.Slist.size() - 1 != temp.paras.size() )
+            throw Sexp(ERROR,"ERROR (incorrect number of arguments) : lambda", ss.Slist);
 
-              ss.Slist[2] = evaluting(inEnv,ss.Slist[2]); // 不知道可不可以這樣寫。
-              inEnv->doTheDefine(ss.Slist[1].value,ss.Slist[2]);
-              return ss.Slist[1]; //返回這個symbol印出a defined。
-              //印出a defined;
-            } // if
-  
-            else if( ss.Slist[1].type == LIST ){ // 定義FUNCTION (define (a b) 2) => (define a ( lambda (b) 2) ) 要改語法
-              if( ss.Slist[1].Slist.size() == 0 || ss.Slist[1].Slist[0].type != SYMBOL ){ // 應該不會有這種狀況存在
-                throw Sexp(ERROR,"ERROR (DEFINE format) : ", ss.Slist); //碰到保留字了 不知道要回傳list還是錯誤的保留字
-              } // if
-              
-              vector<string> parameters;
-              for( int i = 1 ; i < ss.Slist[1].Slist.size() ; i++){
-                if(  ss.Slist[1].Slist[i].type == SYMBOL && ( ! isReservedWord( ss.Slist[1].Slist[i].value )) ){ // 應該不會有這種狀況存在
-                  throw Sexp(ERROR,"ERROR (DEFINE format) : ", ss.Slist); //碰到保留字了 不知道要回傳list還是錯誤的保留字
-                } // if
-                parameters.push_back( ss.Slist[1].Slist[i].value ); //放入parameter
-              } // for 
-              
-              Sexp changetoLambdaExpr = Sexp(FUNCTION_LAMBDA,parameters);
-              changetoLambdaExpr.Slist.push_back(evaluting(inEnv,ss.Slist[2])); // 放body
-              changetoLambdaExpr.value = ss.Slist[1].Slist[0].value; 
-              inEnv->doTheDefine(ss.Slist[1].Slist[0].value, changetoLambdaExpr.Slist[0]);
-              return changetoLambdaExpr;
-              //印出producured a defined;
-            } // else if
-
-            else
-              throw Sexp(ERROR,"ERROR (DEFINE format) : ", ss.Slist); // 如果是list定義的是function那字元，只會是symbol or func其他都是err
-          } // define
-          else if( temp.value == "lambda" ){ // lambda這個有夠難處理，計畫中打算先讓他變成function然後要呼叫他時把，list to body，並加上args
-            if( ss.Slist.size() < 3 ) // lambda 參數量最少要有三個 => lambda () exp~~ 
-              throw Sexp(ERROR,"ERROR (lambda format) : ", ss.Slist);
-            ss.type = FUNCTION_LAMBDA; 
-            vector<string> parameters;
-            if( ss.Slist[1].type == LIST ){
-              if( ss.Slist[1].Slist.size() == 0 ){
-                ss.Slist[1].type = SYMBOL;
-                ss.Slist[1].mtype = NIL;
-                ss.Slist[1].value = "nil";
-              } // if
-              
-              else { // 很多args
-                for( int i = 0 ; i < ss.Slist[1].Slist.size(); i++){
-                  if( ss.Slist[1].Slist[i].type != SYMBOL || isReservedWord(ss.Slist[1].Slist[i].value )  ){
-                    throw Sexp(ERROR,"ERROR (LAMBDA format) : ", ss.Slist);
-                  } // if
-                  parameters.push_back(ss.Slist[1].Slist[i].value);
-                } // for
-                ss.paras = parameters;
-              } // else
-            } // if
-
-            else if( ss.Slist[1].mtype != NIL) // 不是列表或是nil 就是error了
-              throw Sexp(ERROR,"ERROR (LAMBDA format) : ", ss.Slist);
-            
-            vector<Sexp> lambdaBody;
-            for( int i = 2 ; i < ss.Slist.size() ; i++){
-              lambdaBody.push_back(ss.Slist[i]);
-            } // 開始存Sexp(這是body的成分)
-            Sexp tempsexp = Sexp(LIST,lambdaBody); // 為了存body在slist裡面但是又不想要毀掉結構(其實是不知道怎麼在class加入自己)，所以方法時把slist存body一個sexp在讓其展開。
-            ss.Slist.clear();
-            ss.Slist.push_back(tempsexp);
-            return ss;           
-          } // else if 
-
-          else if( temp.value == "set!" ){ // set!
-            if( ss.Slist.size() < 3 ){
-              throw Sexp(ERROR,"ERROR (incorrect number of arguments) : set!", ss.Slist);
-            } // if
-
-            if( ss.Slist[1].type != SYMBOL )
-              throw Sexp(ERROR,"ERROR (Set! format) : ", ss.Slist);
-            ss.Slist[2] = evaluting( inEnv, ss.Slist[2]);
-            inEnv->doTheDefine(ss.Slist[1].value, ss.Slist[2]);
-            return ss.Slist[2];
-          } // else if
-
-          else if( temp.value == "cond" ){ // cond語法(cond (條件 exp1 exp2) (條件2 exp~)(最後條件如果是else的話(全false才執行) exp!) )
-            if( ss.Slist.size() < 2 ){
-              throw Sexp(ERROR,"ERROR (incorrect number of arguments) : COND", ss.Slist);
-            } // if
-            for( int i = 1 ; i < ss.Slist.size() ; i++){
-              if( ss.Slist[i].type != LIST ){
-                throw Sexp(ERROR,"ERROR (COND format) : ",ss.Slist);
-              } //if
-
-              if( ss.Slist[i].Slist.size() < 1)
-                throw Sexp(ERROR,"ERROR (COND format) : ",ss.Slist);
-              else if( ss.Slist[i].Slist.size() == 1 ){ // 只有pred，pred不知道要回傳什麼了，應該不會有這個的測試。
-                for( int k = 0 ; ss.Slist[i].Slist[0].Slist.size() ; k++ ){
-                  if( k == ss.Slist[i].Slist[0].Slist.size() - 1)
-                    return evaluting(inEnv, ss.Slist[i].Slist[0].Slist[k]);
-                  evaluting(inEnv, ss.Slist[i].Slist[0].Slist[k]);  
-                } // for
-              } // else if
-
-              if( i == ss.Slist.size() -1 ){ // 這代表著要看else表達式，這段感覺寫得很冗餘
-                  if( ss.Slist[i].Slist[0].value == "else" || ss.Slist[i].Slist[0].value == "\"else\""){ // 如果已經是else的話就不要計算(因為會unbound symbol沒有的話，要計算條件)
-                    for( int j = 1 ; j < ss.Slist[i].Slist.size() ; j++ ){ // 內部list
-                      if( j == ss.Slist[i].Slist.size()-1 ){ // 條件句
-                        return evaluting(inEnv,ss.Slist[i].Slist[j]);
-                      } // if
-      
-                      else // 不是最後就do the 計算
-                        evaluting(inEnv,ss.Slist[i].Slist[j]); 
-                    } // for
-                  } // if
-                  
-                  ss.Slist[i].Slist[0] = evaluting(inEnv, ss.Slist[i].Slist[0]); // 不是else有可能是symbol to else。
-                  if( ( ss.Slist[i].Slist[0].value == "else" || ss.Slist[i].Slist[0].value == "\"else\"" ) && ss.Slist[i].Slist[0].mtype != NIL){ // 如果已經是else的話就不要計算(因為會unbound symbol沒有的話，要計算條件)
-                    for( int j = 1 ; j < ss.Slist[i].Slist.size() ; j++ ){ // 內部list
-                      if( j == ss.Slist[i].Slist.size()-1 ){ // 條件句
-                        return evaluting(inEnv,ss.Slist[i].Slist[j]);
-                      } // if
-      
-                      else // 不是最後就do the 計算
-                        evaluting(inEnv,ss.Slist[i].Slist[j]); 
-                    } // for
-                  } // if
-                  
-                  else
-                    break;
-              } // if
-
-              ss.Slist[i].Slist[0] = evaluting(inEnv, ss.Slist[i].Slist[0]);
-              if( ss.Slist[i].Slist[0].mtype == NIL ) // 就不執行條件句false
-                continue;
-
-              for( int j = 1 ; j < ss.Slist[i].Slist.size() ; j++ ){ // 內部list
-                if( j == ss.Slist[i].Slist.size()-1 ){ // 條件句
-                  return evaluting(inEnv,ss.Slist[i].Slist[j]);
-                } // if
-
-                else // 不是最後就do the 計算
-                  evaluting(inEnv,ss.Slist[i].Slist[j]); 
-              } // for
-            } // for
-
-            throw Sexp(ERROR,"ERROR (no return value) : ",ss.Slist);
-          } // else if 
-
-          else if( temp.value == "if" ){ // ( if pred expr1 expr2) (if pred expr1)
-            if( ss.Slist.size() < 3 || ss.Slist.size() > 4  ){
-              throw Sexp(ERROR,"ERROR (incorrect number of arguments) : if", ss.Slist);
-            } // if
-            
-            ss.Slist[1] = evaluting(inEnv,ss.Slist[1]); // pred
-            if( ss.Slist[1].mtype != NIL){
-              return evaluting(inEnv, ss.Slist[2]);
-            } // if
-
-            else{
-              if( ss.Slist.size() == 4){
-                return evaluting(inEnv, ss.Slist[2]);
-              } // if
-              else
-                return Sexp(SYMBOL,NIL,"nil");
-            } // else
-          } // else if 
-
-          else if( temp.value == "let" ){ // let語法 (let (( symbol1 sexp1 )(sym2 sexp2) ...) body1 body2)
-            if( ss.Slist.size() < 3  || ss.Slist[1].type != LIST ) // let 參數量最少要有三個 => let (symbol sexp) body1 
-              throw Sexp(ERROR,"ERROR (let format) : ", ss.Slist);  
-            vector<string> symbol_string;
-            vector<Sexp> SexpValues;
-            for( int i = 0 ; i < ss.Slist[1].Slist.size() ; i++){ // (( symbol1 sexp1 )(sym2 sexp2) ...)
-              if( ss.Slist[1].Slist[i].type != LIST || ss.Slist[1].Slist[i].Slist.size() != 2 || ss.Slist[1].Slist[i].Slist[0].type != SYMBOL )
-                throw Sexp(ERROR,"ERROR (let format) : ", ss.Slist);  
-              if( isReservedWord( ss.Slist[1].Slist[i].Slist[0].value ) )
-                throw Sexp(ERROR,"ERROR (let format) : ", ss.Slist);  
-              symbol_string.push_back( ss.Slist[1].Slist[i].Slist[0].value);
-              SexpValues.push_back( evaluting(inEnv,ss.Slist[1].Slist[i].Slist[1]) );
-            } // for
-
-            Environ * localVar = new Environ(inEnv); // 放入LocalVariable去定義
-            for(int i = 0 ; i < symbol_string.size() ; i++){
-              localVar->doTheDefine(symbol_string[i],SexpValues[i]);
-            } // for
-
-            for(int i = 2; i < ss.Slist.size() ; i++ ){
-              if( i == ss.Slist.size()-1 )
-                return evaluting(localVar, ss.Slist[i]);
-              evaluting(localVar, ss.Slist[i]);
-            } // for
-          } // else if 
-
-          else if( temp.value == "and" ){ // and語法 (and expr1 expr2遇到nil就停，沒有就回傳最後一個值)
-            if( ss.Slist.size() < 2  ) // and 參數量最少要有二個 => and expr1
-              throw Sexp(ERROR,"ERROR (and format) : ", ss.Slist); 
-            for( int i = 1 ; ss.Slist.size() ; i++){
-              ss.Slist[i] = evaluting(inEnv, ss.Slist[i]);
-              if( ss.Slist[i].mtype == NIL)
-                return Sexp(SYMBOL,NIL,"nil");
-              else if( i == ss.Slist.size() - 1 )
-                return ss.Slist[i];
-            } // for
-          } // else if
-
-          else if( temp.value == "or" ){ // or語法 反向and ( or expr1 expr2遇到不是nil就停，沒有就回傳最後一個值)
-            if( ss.Slist.size() < 2  ) // or 參數量最少要有二個 => or expr1
-              throw Sexp(ERROR,"ERROR (or format) : ", ss.Slist);   
-            for( int i = 1 ; ss.Slist.size() ; i++){
-              ss.Slist[i] = evaluting(inEnv, ss.Slist[i]);
-              if( ss.Slist[i].mtype != NIL)
-                return ss.Slist[i];
-              else if( i == ss.Slist.size() - 1 )
-                return ss.Slist[i];
-            } // for
-          } // else if 
-
-          else if( temp.value == "begin" ){ // begin語法 begin expr1 expr2然後返回最後一個expr，就begin卻返回最後??
-            if( ss.Slist.size() < 2  ) // begin 參數量最少要有二個 => or expr1
-              throw Sexp(ERROR,"ERROR (or format) : ", ss.Slist);       
-            for( int i = 0 ; ss.Slist.size() ; i++){
-              ss.Slist[i] = evaluting(inEnv, ss.Slist[i]);
-              if( i == ss.Slist.size() - 1 )
-                return ss.Slist[i];
-            } // for
-          } // else if 
-
-          else if( temp.value == "clean-environment" ){ // 不知道clean env
-            if( ss.Slist.size() == 1 ){              
-              inEnv->clearEnv();
-              return ss; //就return
-            } // if
-          }  // else if 
-  
-          else if( temp.value == "exit" ){   // 還有exit算不算，先放著 
-            if( ss.Slist.size() == 1 )
-              return ss; //就return
-          }  // else if 
-  
-          // normal function
-          temp = evaluting(inEnv,temp); // 這可能是個symbol，變成function形式
-          vector<Sexp> argc;
-          if( ss.Slist.size() > 1 ){
+          if( ss.Slist.size() > 1 ){ // do the 計算
             for(int i = 1 ; i < ss.Slist.size() ; i++ ){
               ss.Slist[i] = evaluting(inEnv,ss.Slist[i]);
               argc.push_back(ss.Slist[i]);
             } // for
-          } // if
-  
-          if( temp.type == FUNCTION ){
-            return temp.funptr(argc);
-          } // if
-          else if( temp.type == FUNCTION_LAMBDA){
-            if( argc.size() != temp.paras.size() )
-              throw Sexp(ERROR,"ERROR (incorrect number of arguments) : lambda", ss.Slist);
-            Environ * localVar = inEnv->extendEnv(inEnv,temp.paras,argc); // 放入LocalVariable去定義
-            return evaluting( localVar, temp.Slist[0]);
-          } // else if
-          else if( argc.size() == 0 )
-            return temp;
-          else // 可能throw error之類的
-            cout << "錯誤情況需要debug" << endl;
-        } // else if  
-        
-        else if( ss.type == PAIR ){ // 3/28新增for ( 1 . 2 ) 這種狀況。
-          throw Sexp(ERROR,"ERROR (non-list) : ", ss.Slist);
-        } // else if
-        else 
-          return Sexp(ERROR,"Unknown Type For Debug"); // Untype for debug
-      } // try
-  
-      catch(Sexp error){
-        return error;
-      } // catch
+          } // if   
 
-      cout << "可能有bug" << endl;
-      return Sexp(ERROR,"Unknown Type For Debug"); // Untype for debug
+          Environ * localVar = inEnv->extendEnv(inEnv,temp.paras,argc); // 放入LocalVariable去定義
+          return evaluting( localVar, temp.Slist[0]);
+        } // else if
+
+        else if( argc.size() == 0 ){ // 代表著temp不是function
+          if( temp.type == LIST || temp.type == PAIR)
+            throw Sexp(ERROR,"ERROR (attempt to apply non-function) : ", temp.Slist);
+          else
+            throw Sexp(ERROR,"ERROR (attempt to apply non-function) : " + temp.value);
+        } // else if
+        else // 可能throw error之類的
+          cout << "錯誤情況需要debug" << endl;
+      } // else if  
+      
+      else if( ss.type == PAIR ){ // 3/28新增for ( 1 . 2 ) 這種狀況。
+        throw Sexp(ERROR,"ERROR (non-list) : ", ss.Slist);
+      } // else if
+      else 
+        return Sexp(ERROR,"Unknown Type For Debug"); // Untype for debug
+      return Sexp(ERROR,"Unknown Type For Debug");
     } // evaluing
+
     void project1(int &endsignal){
       if( sTree.type == LIST){
         if( sTree.Slist.size() == 1 ){
@@ -1780,8 +1893,22 @@ class Evaluate {
       prettyPrint(sTree,0);
     } // project1
     
-    void project2(Environ *globalglobal ,int &endsignal){
-      Sexp ce = evaluting( globalglobal, sTree ); // complete expression
+    void project2(Environ *globalglobal ,int &endsignal){ // 3/29把try catch移入這一層
+      Sexp ce = Sexp();
+      try{
+        ce = evaluting( globalglobal, sTree ); // complete expression
+      } // try
+      catch(Sexp error){
+        if( error.Slist.size() > 0 ){
+          cout << error.value;
+          error.type = LIST;
+          prettyPrint(error,0);
+        } // if
+        else
+          cout << error.value  << endl;
+        return;
+      } // catch
+
       if( ce.type == LIST && ce.Slist.size() == 1 ){
         if( ce.Slist[0].value == "exit" ){
           endsignal = 1;
@@ -1791,6 +1918,7 @@ class Evaluate {
         else if( ce.Slist[0].value == "clean-environment"){
           ce = Sexp(SYMBOL,STRING,"environment cleaned");
         } // else if
+
       } // if
 
       prettyPrint(ce,0);
@@ -1798,7 +1926,7 @@ class Evaluate {
 
     void prettyPrint(Sexp s,int M){
       int i = 0, j = 0;
-      if ( s.type == LIST ){ 
+      if ( s.type == LIST || s.type == PAIR){ 
         cout << "( "; 
         for( i = 0 ; i < s.Slist.size() ; i++ ){ // 後續的都在M+2
           if ( i > 0 )
@@ -1822,6 +1950,16 @@ class Evaluate {
           cout << "#t" << endl;
         else if( s.mtype == QUOTE)
           cout << "quote" << endl;
+        else if ( s.type == FUNCTION) { // 3/29新增
+          string str = "#<procedure " + s.value + ">";
+          cout << str << endl;
+        } // else
+
+        else if( s.type == FUNCTION_LAMBDA) { // 3/29新增
+          string str = "#<procedure lambda>";
+          cout << str << endl;
+        } // else
+        
         else  // 那應該就是symbol了
           cout << s.value << endl;
       } // else 
@@ -1829,6 +1967,7 @@ class Evaluate {
   
     void clear(){
       sTree = Sexp();
+      level = 0;
     } // clear
   }; // Evalute
   
@@ -1854,8 +1993,11 @@ int main(){
       evaluate.setSexp(parser.getSexp());
       // evaluate.project1(endsignal);
       evaluate.project2(globalglobal,endsignal);
-      if ( endsignal == 1)
+      if ( endsignal == 1 )
         break;
+      scanner->clear();
+      parser.clear();
+      evaluate.clear();
     } // try
 
     
@@ -1864,17 +2006,11 @@ int main(){
       if( e.errornum == 1) // 跳出EOF
         break;
       // cout << "TokenError at line " << e.line << ", column " << e.column << ": " << e.what() << endl;
-      cin.clear(); 
       scanner->encounterError();
       scanner->clear();
       parser.clear();
       evaluate.clear();
     } // catch
-
-    cin.clear();
-    scanner->clear();
-    parser.clear();
-    evaluate.clear();
   } // while
   cout << endl << "Thanks for using OurScheme!";	
   return 0;
