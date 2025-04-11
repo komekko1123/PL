@@ -88,6 +88,7 @@ enum SexpType{
   LIST,
   FUNCTION_LAMBDA, // 3/25新增()
   PAIR, // 3/28新增()
+  STRING_O, // 怎麼還是要STRING型別阿
   NOTYPE,
 };
 
@@ -139,7 +140,7 @@ public:
   function<Sexp(const vector<Sexp>&)> funptr; // 函數指標 
   static long nextID; // 3月28日(解決eqv要記憶體位址的問題!!!!!!!)
   long uniqueID;  // 3月28日(解決eqv要記憶體位址的問題!!!!!!!)
-  Environ *innerLambdaEnv; // 4/9號 處理多層lambda環境的問題 
+
   Sexp(){  
     type = NOTYPE;
     mtype = NOP;
@@ -148,14 +149,12 @@ public:
     Slist.clear();
     paras.clear();
     uniqueID = nextID++;
-    innerLambdaEnv = nullptr;
   } // 3/28
   Sexp(SexpType Stype, string theValue ){
     type = Stype;
     value = theValue;
     mtype = ERR;
     uniqueID = nextID++;
-    innerLambdaEnv = nullptr;
   } // ERROR用到
 
   Sexp(SexpType Stype, vector<string> parameter ){
@@ -163,7 +162,6 @@ public:
     paras = parameter;
     uniqueID = nextID++;
     mtype = NOP;
-    innerLambdaEnv = nullptr;
   } // ERROR用到
 
   Sexp(SexpType Stype, string theValue, vector<Sexp> theList ){
@@ -173,7 +171,6 @@ public:
     Slist = theList;
     uniqueID = nextID++;
     mtype = ERR;
-    innerLambdaEnv = nullptr;
   } // define error用的到
 
 
@@ -182,7 +179,6 @@ public:
     Slist = theList;
     uniqueID = nextID++;
     mtype = NOP;
-    innerLambdaEnv = nullptr;
   } // LIST的模式
 
   Sexp(SexpType Stype, function<Sexp(const vector<Sexp>&)> fptr, string str){
@@ -191,12 +187,10 @@ public:
     funptr = fptr;
     uniqueID = nextID++;
     mtype = NOP;
-    innerLambdaEnv = nullptr;
   } // 指向函數指標
 
 
   Sexp(SexpType Stype, tokenType theMtype,string theValue ){ // 感覺應該想好再寫的
-    innerLambdaEnv = nullptr;
     type = Stype;
     value = theValue;
     mtype = theMtype;
@@ -671,8 +665,13 @@ public:
       return s;
     } // else if
 
-    else if ( t.type == NIL || t.type == T || t.type == SYM || t.type == STRING ){
+    else if ( t.type == NIL || t.type == T || t.type == SYM ){
       s.type = SYMBOL;
+      return s;
+    } // else if
+
+    else if( t.type == STRING){
+      s.type = STRING_O; // 4/11新增
       return s;
     } // else if
 
@@ -1020,7 +1019,7 @@ Sexp cdr(const vector<Sexp> & selist  ){ //拿剩下元素
 Sexp predictAtom(const vector<Sexp> & selist  ){ // nil是atom，沒修好bug!!!! 4/8
   if( selist.size() != 1 )
     throw Sexp(ERROR,"ERROR (incorrect number of arguments) : atom?"); //
-  if(  selist[0].type == SYMBOL  || selist[0].type == NUMBER )
+  if(  selist[0].type == SYMBOL  || selist[0].type == NUMBER || selist[0].type == STRING_O )
     return Sexp(SYMBOL,T,"#t");
   else
     return Sexp(SYMBOL,NIL,"nil");  
@@ -1281,7 +1280,7 @@ Sexp stringAppend(const vector<Sexp> & selist  ){ // 第二題告訴我要銜接
     string str2 = selist[i].value.substr(1, selist[i].value.size()); // 扣除最前面的"
     str = str + str2;
   } // for
-  return Sexp(SYMBOL,STRING,str);
+  return Sexp(STRING_O,STRING,str);
 } // add
 
 Sexp isStringGreaterThan(const vector<Sexp> & selist  ){
@@ -1442,7 +1441,7 @@ bool expectedFunctionArgcNum( Sexp fun,int argcSize ) {
   else if( fun.value == "car" || fun.value == "cdr" || fun.value == "atom?" || fun.value == "pair?" 
            || fun.value == "list?" || fun.value == "null?" || fun.value == "integer?" || fun.value == "real?" 
            || fun.value == "number?" || fun.value == "string?" || fun.value == "boolean?" || fun.value == "symbol?" 
-           || fun.value == "not"  || fun.value == "quote") {
+           || fun.value == "not"  || fun.value == "quote" || fun.value == "verbose?" || fun.value == "verbose"  ) {
     if( argcSize != 1)
       return false;
     else  
@@ -1469,8 +1468,8 @@ bool expectedFunctionArgcNum( Sexp fun,int argcSize ) {
 
 Sexp verboseMod(const vector<Sexp> & selist  ){
   if( selist.size() != 1 )
-    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : integer?"); //
-  if( selist[1].mtype == NIL ){
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : verbose"); //
+  if( selist[0].mtype == NIL ){
     verboseSignal = 0;
     return Sexp(SYMBOL,NIL,"nil");
   } // if
@@ -1493,7 +1492,7 @@ class Environ{ //設計是這是變數的放置區，
   public:  
     map<string,Sexp> env; 
     Environ * Parent; // 設計是讓local指向global
-    bool lambdaLayer // 4/11用來處理這個遇到的麻煩問題
+    bool lambdaLayer; // 4/11用來處理這個遇到的麻煩問題
      
     Environ(){
       Parent = NULL;
@@ -1554,7 +1553,7 @@ class Environ{ //設計是這是變數的放置區，
       env["exit"] = Sexp(FUNCTION, doExit, "exit");
       env["quote"] = Sexp(FUNCTION, isQuote, "quote"); // quote寫成function
       // 4/11
-      env["verbose"] = Sexp(FUNCTION, verboseMod, "verbose?"); // quote寫成function
+      env["verbose"] = Sexp(FUNCTION, verboseMod, "verbose"); // quote寫成function
       env["verbose?"] = Sexp(FUNCTION, predictVerbose, "verbose?"); // quote寫成function  
     } // buildinFunction 
   
@@ -1568,15 +1567,24 @@ class Environ{ //設計是這是變數的放置區，
       else if( Parent != NULL ){ //沒找到找往global，parent往上找。
         // *********************************************************** 為了過命名衝突測資而改的(why!!)
         // int i = 0;
-        // Environ *temp =  Parent;
-        // while( temp -> Parent != NULL){ 
-        //   temp = temp -> Parent;
-        //   i++;
-        // } // while
+        Environ *temp =  Parent;
+        if( lambdaLayer == true ) { // 現在是lambda層就找到有為止
+          while( temp -> Parent != NULL  ){ 
+            temp = temp->Parent;
+          } // while 
+
+          if( temp->env.find(arg.value) != temp->env.end()   )
+            return temp->env[arg.value]; // 找到了返回環境
+          else
+            throw Sexp(ERROR,"ERROR (unbound symbol) : " + arg.value); 
+          //如果沒有找到就要throw error了
+        } // if
+        
+        // i++;
         // if( temp->env.find(arg.value) != temp->env.end() && (arg.value == "x3" ) && ( i == 1 )   )
         //   return temp->env[arg.value]; // 找到了返回環境
         // // *********************************************************** 更改的部分
-        return Parent->retrieveEnv(arg);  
+        return temp->retrieveEnv(arg);  
       } //else if
       else
         throw Sexp(ERROR,"ERROR (unbound symbol) : " + arg.value); 
@@ -1675,7 +1683,7 @@ class Evaluate {
               parameters.push_back( ss.Slist[1].Slist[i].value ); //放入parameter
             } // for 
             
-            Sexp changetoLambdaExpr = Sexp(FUNCTION_LAMBDA, parameters);
+            Sexp changetoLambdaExpr = Sexp(FUNCTION_LAMBDA,parameters);
             for(int i = 2 ; i < ss.Slist.size() ; i++ ){
               changetoLambdaExpr.Slist.push_back(ss.Slist[i]); // 放body
             } // for
@@ -1711,10 +1719,6 @@ class Evaluate {
                 parameters.push_back(ss.Slist[1].Slist[i].value);
               } // for
               ss.paras = parameters;
-              Environ *temp = inEnv;
-              while(temp -> Parent != NULL)
-                temp = temp->Parent;
-              ss.innerLambdaEnv = temp ;
             } // else
           } // if
 
@@ -1736,11 +1740,11 @@ class Evaluate {
 
         else if( temp.value == "set!" ){ // set!
           if( ss.Slist.size() < 3 ){
-            throw Sexp(ERROR,"ERROR (incorrect number of arguments) : set!", ss.Slist);
+            throw Sexp(ERROR,"ERROR (incorrect number of arguments) : set!");
           } // if
 
           if( ss.Slist[1].type != SYMBOL )
-            throw Sexp(ERROR,"ERROR (Set! format) : ", ss.Slist);
+            throw Sexp(ERROR,"ERROR (SET! format) : ", ss.Slist);
           inEnv->retrieveEnv(ss.Slist[1]); // 看有沒有被綁定過，沒有會拋ERROR
 
           Sexp tempArgment = ss.Slist[2]; 
@@ -1885,8 +1889,8 @@ class Evaluate {
         } // else if 
 
         else if( temp.value == "and" ){ // and語法 (and expr1 expr2遇到nil就停，沒有就回傳最後一個值)
-          if( ss.Slist.size() < 2  ) // and 參數量最少要有二個 => and expr1
-            throw Sexp(ERROR,"ERROR (and format) : ", ss.Slist); 
+          if( ss.Slist.size() <= 2  ) // and 參數量最少要有二個 => and expr1
+            throw Sexp(ERROR,"ERROR (incorrect number of arguments) : and" ); 
           for( int i = 1 ; ss.Slist.size() ; i++){
             Sexp tempArgment = ss.Slist[i]; 
             tempArgment = evaluting(inEnv, ss.Slist[i]);
@@ -1906,8 +1910,8 @@ class Evaluate {
         } // else if
 
         else if( temp.value == "or" ){ // or語法 反向and ( or expr1 expr2遇到不是nil就停，沒有就回傳最後一個值)
-          if( ss.Slist.size() < 2  ) // or 參數量最少要有二個 => or expr1
-            throw Sexp(ERROR,"ERROR (or format) : ", ss.Slist);   
+          if( ss.Slist.size() <= 2  ) // or 參數量最少要有二個 => or expr1
+            throw Sexp(ERROR,"ERROR (incorrect number of arguments) : or");   
           for( int i = 1 ; ss.Slist.size() ; i++){
             Sexp tempArgment = ss.Slist[i]; 
             tempArgment = evaluting(inEnv, ss.Slist[i]);
@@ -2030,12 +2034,7 @@ class Evaluate {
 
           if( temp.paras.size() != argc.size() ) // pj3 第6提錯誤1 
             throw Sexp(ERROR,"ERROR (unbound parameter) : ", sTree.Slist);
-
-          Environ * localVar = nullptr;
-          if( temp.innerLambdaEnv != nullptr)
-            localVar = inEnv->extendEnv(temp.innerLambdaEnv,temp.paras,argc); // 放入LocalVariable去定義
-          else
-            localVar = inEnv->extendEnv(inEnv,temp.paras,argc);
+          Environ * localVar = inEnv->extendEnv(inEnv,temp.paras,argc); // 放入LocalVariable去定義
           for( int i = 0 ; i < temp.Slist.size() ; i++ ){ // 4/7pj3第三題 忘記了lambda只回傳最後了
               if( i == temp.Slist.size()-1 ){
                 Sexp tempArgment = evaluting( localVar, temp.Slist[temp.Slist.size()-1] );
@@ -2192,6 +2191,7 @@ class Evaluate {
   
 
 
+
 int main(){
   int utestnum = 0;
   char ch = '\0';
@@ -2207,6 +2207,9 @@ int main(){
       cout << endl << "> ";
       parser.startParsing();
       evaluate.setSexp(parser.getSexp());
+      if( utestnum == 2){
+        break;
+      }
       // evaluate.project1(endsignal);
       evaluate.project2(globalglobal,endsignal);
       if ( endsignal == 1 )
