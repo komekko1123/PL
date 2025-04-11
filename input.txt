@@ -1,308 +1,346 @@
-2
-; =============== Problem 8 可見數據 ====================
-ab
-(define a "=============== Problem 8 viewable case =================")
-a
+1
+(clean-environment) ; second round, with error
 
-(clean-environment)
+(define x1 3)(define x2 4)(define x3 5)
 
-a
-(cons (clean-environment) a)
-
-; when the being evaluated S-expr is an atom, the result is that atom
-; (in our standard print-form)
-
-+3 -.12548 "Hi\n\"
-
-; when a function is being evaluated, the parameters of this function
-; are evaluated BEFORE this function is "applied" 
-; to the evaluated results (of the parameters)
-
-; 1. A list (or rather, a dotted pair) is CONSTRUCTED.
-
-(cons 3 4)     ; an operation on two objects
-(cons 3
-        nil
-  )            ; '(3 . nil)' = '(3)'
-(cons 30
-        ()
-  )            ; same thing
-(cons 30
-        #f
-  )            ; same thing
-()
-(cons () nil)(cons #f #f)(cons 'nil '())
-(CONS 3 4)      ; Scheme distinquishs between upper and lower cases
-(cons hello 4)
-hello
-(CONS hello there)
-(list 1 2 3)(list)(list nil 2 3 #f)
-(list 1 2 3)(cons)(list nil 2 3 #f)
-(cons 1 2 3 ; Number of arguments should always be checked before
-              ; the evaluation of an S-expression ;
-  )           ; Once such an error is detected, no evaluation is performed ;
-(cons hello there! How are you?)
-(cons (clean-environment) ())
-(cons (clean-environment))
-
-; 2. quote - a way to "by pass" the default interpretation of an S-exp
-
-(3 4 5)
-'(3 4 5)'3 . ()
-(quote (3 (4 5)))
-(cons 3 
-        (4321 5))
-(cons 3 '(4321 5))
-(list 3 (4 5))
-(list 3 '(4 5))
-(list 3 
-        '(4 5) 
-        6 
-        '(7 8))
-        
-; 3. To give a (symbolic) name to an object
-
-; Meaning of DEFINE revisited ("令")
-
-; Basically, DEFINE sets up a (temporary) binding between a symbol 
-; and an S-expression
-
-; DEFINE sets up the binding between a name and an internal data structure
-
-abc
-(define a 5)   ; "令a為5"; 讓我們把"那個東西"又稱為'a'
-(define b (define a 5))  ; 'define' must appear at the toplevel
-(define 5 10)            ; first argument of 'define' must be a symbol
-(define cons 5          ; first argument of 'define' cannot be the name 
-)                       ; of a primitive
-(define define 5)
-(define)
-(define a)
-(define a b c)
-(cons (define a 5) ())
-(cons (define a 5))
-(cons (clean-environment) (define a 5))
-
-(define bcd (cons 3 5))
-bcd             ; Is 'bcd' a name of some thing?
-a             ; Is 'a' a name of some thing?
-(define x '((3 4) 5))   ; 讓我們把"那個東西"又稱為'x'
-x              ; Is 'x' a name of some thing?
-
-; Combining (1), (2) and (3)
-
-(define hello '(1 2 . 3))
-hello
-(cons hello 
-        4
-  )       
-(cons hello 
-        '(4)
-  )       
-(define hello "\"CYCU ICE\"" . nil)
-(list hello (cons hello hello))
-(list hello (cons hello hello) . hello)
-(cons hello 
-      '(400 (5000 600) 70)
-)       
-(define there "Number One!")
-(cons hello there)
-(define hello (cons '(1 2 . (3)) hello)
-)
-(define 'hello (cons '(1 2 . (3)) hello)
-)
-( list hello
-       4
-       'hello
-)
+( define (TrickySumUp start end) 
   
-; Whenever a function is called, its parameters are evaluated BEFORE
-; the function is "applied" to the evaluated results of the parameters ;  
-; However, this requires that (the evaluated result of) the first 
-; component of the being-evaluated list must be bound to a function ;
-; if (the evaluated result of) the first component of the being-evaluated list
-; is not bound to a function in the first place, the evaluation process 
-; stops, and an appropriate error message is issued.
+  ; return the sum of start, start+1, start+2, ..., end
+  ; requirement : start <= end
+  ; float version + some nonsense code, which should not hurt
+  
+  ( cond ( (= start end) start )
+         ( (> start end) "Illegal input! the first argument must be smaller or equal to the second.")
+         ( else
+           ( let ( ( new-start (+ start 1) )
+                   ( x1 (+ x1 x2) )
+                   ( x3 (+ x3 5) )
+                 )
+                 
+                 ; instead of
+                 
+                 ; ( + start 
+                 ;     ( if ( > new-start end ) ; just in case we've got a float here
+                 ;          end
+                 ;         ( TrickySumUp new-start end ) 
+                 ;     ) ; if
+                 ; );+
+                 
+                 ; we use below
+                 
+                 ( if ( > new-start end ) ; just in case we've got a float here
+                      ( begin (+ x1 x2) (+ start end))
+                      ( let ( ( sum-of-the-rest 
+                                (TrickySumUp new-start end) 
+                              )
+                            )
+                            ( if ( > sum-of-the-rest 300 )
+                                 ( + start (Transform start end start) )
+                                 ( + start sum-of-the-rest )
+                            );if
+                      );let
+                 );if
+           );let
+         );else
+  );cond
+   
+);define TrickySumUp
 
-(define a '(3 4))
+(TrickySumUp 3.5 10)
+(TrickySumUp 3.5 30)
+(+ (TrickySumUp 3.5 10) 5)
+(+ (TrickySumUp 3.5 2) (TrickySumUp 3.5 10))
+(TrickySumUp 3.5 2)
+(TrickySumUp 3.5 3.5)
+(+ x1 x2 x3)
 
-; 4. Different parts of a list (or a dotted pair) can be 
-;    individually accessed
+( define ( Abs x )
+  ; return the absolute value of X
 
-(car '(3 4))    ; the "left part" of a dotted pair
-(car '((3 4) 5)  )
-(car '((3 4) 5 . 6)  )
-(car '((3 4) . 5)  )
-(car a)
-(car (car a))
-(car 345)
-(car WarAndPeace!)
-(car 'WarAndPeace!)
-(car '(WarAndPeace!))
-(cdr "(War And Peace!)")
-(cdr '((3 4) 5)  )  ; the "right part" of a dotted pair
-(cdr '((3 4) "Happy New Year!" . 6)  )
-(cdr '((3 4) . "Merry Christmas!")  )
-(cdr a)
+  ( if ( not ( real? x ) )
+       "Abs: the given argument has to be a real number (including integer)"
+       ( if ( < x 0 )
+            ( * x -1 )
+            x
+       );if
+  );if
+  
+);define Abs
 
-(exit 0)
+( define ( Real x ) 
 
-; =============== Problem 9 可見數據 ====================
-ab
-(define a "=============== Problem 9 viewable case =================")
-a
+  ( cond ( ( not ( real? x ) )
+           "cannot cast something that is neither a real nor an integer into a real"
+         )
+         ( ( integer? x ) ( * 1.0 x )
+         )
+         ( else x )
+  );cond
+  
+);define Real
 
-(clean-environment)
+( define ( Int x ) 
+  ; return the integer part of x
 
-a
+  ( cond ( ( integer? x ) 
+           x 
+         )
+  
+         ; x is not an integer
+         
+         ( ( not ( real? x ) )
+           "Int: cannot cast something that is neither an integer nor a real into an integer"
+         )
+         
+         ; x is a real
+         
+         ( else
+  
+           ( if ( and ( < -1 x ) 
+                      ( <  x  1 ) 
+                );and
+           
+                0
+                
+                ; x is a real and either x <= -1 or 1 <= x
+           
+                ( let ( ( x ( Abs x ) )
+                        ( negative ( < x 0 ) )
+                      )
+                      ( let ( ( below-above ( FindRange x ) ) ; below <= x <= above
+                            )
+                            ( let ( ( below ( car below-above ) )
+                                    ( above ( car ( cdr below-above ) ) )
+                                  )
+                                  ( let ( ( floor ( IntFloor below x above ) )
+                                        )
+                                        ( if negative
+                                             ( * -1 floor )
+                                             floor
+                                        );if
+                                  );let
+                            );let
+                      );let
+                );let
+           );if
+         );else
+  );cond
 
-; 5. Primitive predicates (A predicate is a function that returns
-;      #t or nil (i.e., #f); By convention, the name of a predicate
-;      should have a suffix '?')
+);define Int
 
-(pair? 3)      ; Other Lisps may not have PAIR?; they have ATOM? and LIST?
-(pair? '(3 4))
-(pair? '(3 . 4))
-(pair? "Hello, there!")
-(pair? "Hello, " "How are you?")
-(pair?)
-(null? ())     ; is it the empty list?
-(null? #f)     ; #f = nil = ()
-(null? '(3 . 4))
-(integer? 3)
-(integer? 3.4)
-(integer? -.4)
-(real? +3)
-(real? 3.4)
-(real? .5)
-(number? 3)
-(number? 3.4)
-(string? "Hi")
-(string? +3.4)
-(boolean? #t)
-(boolean? ())
-(boolean? #f)
-(boolean? '(3 . 4))
-(symbol? 'abc)
-(symbol? 3)
-(number? America)
-(define America '(U. S. A.))
-(symbol? America    ; Once the symbol America is evaluated,
-  )                   ; do we get a symbol?
-(pair? America)
-(pair? American)
-(boolean? America)
-(pair? Europe 4)
-(define Europe 'hi)
-(pair? America Europe)
+( define ( Power a n )
+  ; return a**n
+  ; requirement: n has to be an integer
+  
+  ( cond ( ( not ( integer? n ) )
+           "Power : n has to be an integer"
+         )
+         
+         ; n an integer
+         
+         ( ( < n 0 )
+           ( let ( ( positive ( * -1 n ) )
+                 )
+                 ( / 1.0 ( Power a positive ) )
+           );let
+         )
+         
+         ; n is a non-negative integer
+         
+         ( ( = n 0 )
+           1
+         )
+         
+         ; n is a positive integer
+         
+         ( else 
+           ( * a ( Power a ( - n 1 ) ) )
+         )
+  );cond
+  
+);define Power
+           
+( define ( FindRange x )
+  ; starting with 2**0, find n and m, so that n <= m and 2**n <= x1 < 2**m
+  ; return >>( 2**n 2**m )<<
+  ; x is assumed to be greater than or equal to 1
+  
+  ( if ( < x 1 )
+       "FindRange: x must be greater than or equal to 1"
+       ( Find-Range x 0 )
+  );if
+  
+);define FindRange 
 
-; 6. Basic arithmetic, logical and string operations
+( define ( Find-Range x startWith )
+  ; starting with 2**startWith, find n and m, so that n <= m and 2**n <= x1 < 2**m
+  ; return >>( 2**n 2**m )<<
+  ; x is assumed to be greater than or equal to 1
+  
+  ( let ( ( start ( Power 2 startWith ) )
+          ( end ( Power 2 ( + startWith 1 ) ) )
+        )
+    ( cond ( ( = x start )
+             ( list start start )
+           )
+           ( ( < x end )
+             ( list start end )
+           )
+           ( else ; ( <= end x )
+             ( Find-Range x ( + startWith 1 ) )
+           )
+    );cond
+  );let
 
-(+ 3 7 10)
-(- 3 7 10)
-(- 3.5 5 10)
-(* 3 4)
-(* 3 "Hi")
-(* 3 4.5 5)
-(* '(1 (2 3) 4) '(6 7 8))
-(*)
-(* 3)
-(* 3 4 5)
-(* 1 2 3 4 5)
-(/ 3)
-(- 3)
-(+ 3)
-(- 1 2 3 4 5)
-(define a 5)
-(/ 15 a)
-(/ 7 a)
-(/ 15.0 3)
-(/ 15 2)
-(/ 15.0 2)
-(/ 15 0)
-(/ 15 2.0)
-(/ 45 3 5 2)
-(+ 15.125 4)
-(+ (* a 10) (pair? (+ a a)))
-(not #t)
-(not)
-(not What about?)
-(not 3)
-(not '(1 2))
-(not ())
-(not nil)
-(not (pair? (+ a a)))
-(> 3 2 1.2)
-(> 5 3 1)
-(> 5 3 5 nil)
-(> 3.125 2)
-(>= 3.25 2)
-(< 3.125 2)
-(<= 3.125 2)
-(<= 2 2 2 2 2 2 2 2)
-(= 2 2)
-(= 2 a)
-(> a a)
-(> a 'a)
-(= 2 a a)
-(>= a a a 'a)
-(string-append "\"Hello," " there!\"")
-(string-append "Hello," " there!" " Wait!")
-(string-append "Hello,"")
-(string-append "Hello,")
-(string-append)
-(string>? "az" "aw")
-(string>? "az" "aw" "ax")
-(string>? "az" "aw" "atuv")
-(string>? "az")
-(string>?)
-(string>? 15 "hi")
-(string<? "az" "aw")
-(string<? "az" "aw" "ax")
-(string<? "az" "aw" (+ 2 (/ 5 3)) "ax")
-(string<? "az" "aw" (+ 2 (/ 5 0)) "ax")
-(string<? "az" "aw" "atuv")
-(string=? "az" "aw")
-(string=? "az" "aw" "ax")
-(string=? "az" (string-append "a" "z"))
-(string=? "az" (string-append "a" "z" 3) (/ (+ 3 5) (- 12 (+ 5 7))))
-(string=? "az" (string-append "a" "z" "3") (/ (+ 3 5) (- 12 (+ 5 7))))
-(+ 15 (begin "hi" 5))
-(+ 15 (begin 4 5 "hi"))
-(string>? "hi" "there" a)
-(string>? "hi" "there" about)
+);define Find-Range
+       
+( define ( IntFloor below x above )
+  ( if ( not ( and ( <= below x )
+                   ( <= x above )
+             )
+       )
+       "IntFloor: the three arguments should be BELOW <= X <= ABOVE"
+       ( Int-Floor below x above )
+  );if
+);define
 
-; 8. eqv? and equal?
+( define ( Int-Floor below x above ) 
+  ; BELOW and ABOVE are two integers s. t. BELOW <= x <= ABOVE
+  ; find the integer FLOOR, so that FLOOR <= x < FLOOR+1
+  ; return FLOOR
+  
+  ( cond ( ( = below x ) below )
+         ( ( = above x ) above )
+         ( ( and 
+             ( > below 30000 )
+             ( < above ( + below 3 ) )
+           )
+           ( let ( ( below (Transform below above below) )
+                 )
+                 above
+           )
+         )
+         ( ( = ( + below 1 ) above )
+           below
+         )
+         
+         ; BELOW + 1 < ABOVE
+         
+         ( else
+           ( let ( ( middle ( / ( + below above ) 2 ) 
+                   )
+                 )
+                 
+                 ; MIDDLE is neither BELOW nor ABOVE
+                 ; i.e., BELOW < MIDDLE < ABOVE
+                 
+                 ( if ( < x middle )
+                      ( Int-Floor below x middle )
+                      ( Int-Floor middle x above )
+                 );if
+           );let
+         );else
+  );cond
 
-; eqv? returns "true" only when the two being compared
-; objects are atoms (except in the case of strings)
-; or when the two being compared objects "occupy the
-; same memory space".
+);define Int-Floor
 
-; equal?, on the other hand, is the usual notion of 
-; equality comparison
+( define ( Transform tag x1 x5 )   ;    x1 : p2     x5 : p3
+  ( begin
+    ( if ( > tag 0 )
+         ( let ( ( x3 (+ x1 x5) )
+               )
+               (+ x3 x2)
+         );let
+         ; ( let ( ( x3 (- x1 x5) )  ; no return value when tag <= 0 ; but OK
+         ;       )
+         ;       (+ x3 x2)
+         ; );let
+    );if
+    ( if ( > tag 0 )
+         ( let ( ( x3 (+ x1 x5) )
+               )
+               ( if ( < x1 x5 )
+                    ( + x3 x2 )     ; no return value  when tag > 0 AND p2 >= p3 ; result NOT OK
+               )
+         );let
+         ( let ( ( x3 (- x1 x5) )
+               )
+               (+ x3 x2)
+         );let
+    );if
+  );begin
+);define Transform
 
-(eqv?)
-(eqv? 3)
-(eqv? 3 3)
-(eqv? 3 3 3)
-(define a '((3 (4 5))))
-a
-(eqv? a a)
-(eqv? a '((3 (4 5))))
-(equal? a '((3 (4 5))))
-(define b a)
-(eqv? a b)
-(define c '(3 4))
-(eqv? a c)
-(equal? a c)
-(eqv? '((3 (4 5))) '((3 (4 5))))
-(eqv? "Hi" "Hi")
-(equal? a a)
-(equal? '((3 (4 5))) '((3 (4 5))))
-(equal? '((3 (4 5))) '(3 4 5))
-(equal? "Hi" "Hi")
+; ( define x1 (Transform 3 30 20) ) ; error
+; ( define x1 (Transform 3 20 30) )
+; ( define x2 (Transform -3 20 30) )
+; ( define x2 (Transform -3 30 20) )
+; ( define x2 (Transform -3 (Transform 3 30 20) 30) ) ; error
 
-(define c (cdr a))(eqv? c (cdr b))(define c (cons (car a) (cdr b)))
-(eqv? c b)(equal? c b). 5
-(+ 10 20)(  . 5 )
+(FindRange 13579.246810)
+(IntFloor 8192 13579.246810 16384)
+(Int 13579.246810)
+(Real (Int 13579.246810))
+(FindRange 1024)
+(Int 1024)   
+(Int -13579.246810)
+(define x ( Transform 3 5 2 ) )
+(define x ( Int 31258.79 ) )
+(Transform 3 31258.79 2 )
+(Transform 3 (Int 31258.79) 2 )
+
+( define ( GuaiPower a n )
+  ; return a**n
+  ; requirement: n has to be an integer
+  
+  ( cond ( ( > a 10 ) ( Transform 18 42 15 ) ( Power a n ) )
+         ( ( > n 10 ) ( Power a n ) (Transform 58 36 27) )
+         ( else ( Power a n ) )
+  );cond
+  
+);define GuaiPower
+
+(GuaiPower 2 12)
+(GuaiPower 12 2)
+
+( define ( Find-Range x startWith )
+  ; starting with 2**startWith, find n and m, so that n <= m and 2**n <= x1 < 2**m
+  ; return >>( 2**n 2**m )<<
+  ; x is assumed to be greater than or equal to 1
+  
+  ( let ( ( start ( GuaiPower 2 startWith ) )
+          ( end ( GuaiPower 2 ( + startWith 1 ) ) )
+        )
+    ( cond ( ( = x start )
+             ( list start start )
+           )
+           ( ( < x end )
+             ( list start end )
+           )
+           ( else ; ( <= end x )
+             ( Find-Range x ( + startWith 1 ) )
+           )
+    );cond
+  );let
+
+);define Find-Range
+
+(Int 12345.67)
+(Int 234.56)
+(define x (Int 12345.67))
+(Power (Int 12345.67) 3)
+
+( define ( GuaiInt x )
+  ( if ( and ( < 100 x ) ( < x 99999 ) )
+       ( Int x )
+  )
+);define GuaiInt
+
+(GuaiInt 12345.67)
+(GuaiInt 23.56)
+(define x (GuaiInt 12345.67))
+(Power (GuaiInt 23.56) 3)
+(GuaiInt 123.45)
+(define x (GuaiInt 9458.67))
+
+;;;;;;;;;; From Proj. 2 Prob. 16 ;;;;;;;;;;;;;;;;;
