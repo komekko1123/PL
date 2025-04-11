@@ -139,7 +139,7 @@ public:
   function<Sexp(const vector<Sexp>&)> funptr; // 函數指標 
   static long nextID; // 3月28日(解決eqv要記憶體位址的問題!!!!!!!)
   long uniqueID;  // 3月28日(解決eqv要記憶體位址的問題!!!!!!!)
-  Environ *innerLambdaEnv; // 4/9號 處理多層lambda環境的問題 
+
   Sexp(){  
     type = NOTYPE;
     mtype = NOP;
@@ -148,14 +148,12 @@ public:
     Slist.clear();
     paras.clear();
     uniqueID = nextID++;
-    innerLambdaEnv = nullptr;
   } // 3/28
   Sexp(SexpType Stype, string theValue ){
     type = Stype;
     value = theValue;
     mtype = ERR;
     uniqueID = nextID++;
-    innerLambdaEnv = nullptr;
   } // ERROR用到
 
   Sexp(SexpType Stype, vector<string> parameter ){
@@ -163,7 +161,6 @@ public:
     paras = parameter;
     uniqueID = nextID++;
     mtype = NOP;
-    innerLambdaEnv = nullptr;
   } // ERROR用到
 
   Sexp(SexpType Stype, string theValue, vector<Sexp> theList ){
@@ -173,7 +170,6 @@ public:
     Slist = theList;
     uniqueID = nextID++;
     mtype = ERR;
-    innerLambdaEnv = nullptr;
   } // define error用的到
 
 
@@ -182,7 +178,6 @@ public:
     Slist = theList;
     uniqueID = nextID++;
     mtype = NOP;
-    innerLambdaEnv = nullptr;
   } // LIST的模式
 
   Sexp(SexpType Stype, function<Sexp(const vector<Sexp>&)> fptr, string str){
@@ -191,12 +186,10 @@ public:
     funptr = fptr;
     uniqueID = nextID++;
     mtype = NOP;
-    innerLambdaEnv = nullptr;
   } // 指向函數指標
 
 
   Sexp(SexpType Stype, tokenType theMtype,string theValue ){ // 感覺應該想好再寫的
-    innerLambdaEnv = nullptr;
     type = Stype;
     value = theValue;
     mtype = theMtype;
@@ -1493,17 +1486,13 @@ class Environ{ //設計是這是變數的放置區，
   public:  
     map<string,Sexp> env; 
     Environ * Parent; // 設計是讓local指向global
-    bool lambdaLayer // 4/11用來處理這個遇到的麻煩問題
-     
     Environ(){
       Parent = NULL;
       buildinFunction();
-      lambdaLayer = false;
     } // Environ
     
     Environ(Environ * upperParent){
       Parent = upperParent;
-      lambdaLayer = false;
     } // 指向parent
 
     void buildinFunction(){
@@ -1598,7 +1587,6 @@ class Environ{ //設計是這是變數的放置區，
     } // clearEnv
     Environ * extendEnv(  Environ* upperParent, vector<string> mParas, vector<Sexp> mArgs){
       Environ* newEnv = new Environ(upperParent); // init
-      newEnv->lambdaLayer = true;
       for( int i = 0 ; i < mParas.size() ; i++ ){
         newEnv->env[mParas[i]] = mArgs[i]; 
       } // for
@@ -1675,7 +1663,7 @@ class Evaluate {
               parameters.push_back( ss.Slist[1].Slist[i].value ); //放入parameter
             } // for 
             
-            Sexp changetoLambdaExpr = Sexp(FUNCTION_LAMBDA, parameters);
+            Sexp changetoLambdaExpr = Sexp(FUNCTION_LAMBDA,parameters);
             for(int i = 2 ; i < ss.Slist.size() ; i++ ){
               changetoLambdaExpr.Slist.push_back(ss.Slist[i]); // 放body
             } // for
@@ -1711,10 +1699,6 @@ class Evaluate {
                 parameters.push_back(ss.Slist[1].Slist[i].value);
               } // for
               ss.paras = parameters;
-              Environ *temp = inEnv;
-              while(temp -> Parent != NULL)
-                temp = temp->Parent;
-              ss.innerLambdaEnv = temp ;
             } // else
           } // if
 
@@ -2030,12 +2014,7 @@ class Evaluate {
 
           if( temp.paras.size() != argc.size() ) // pj3 第6提錯誤1 
             throw Sexp(ERROR,"ERROR (unbound parameter) : ", sTree.Slist);
-
-          Environ * localVar = nullptr;
-          if( temp.innerLambdaEnv != nullptr)
-            localVar = inEnv->extendEnv(temp.innerLambdaEnv,temp.paras,argc); // 放入LocalVariable去定義
-          else
-            localVar = inEnv->extendEnv(inEnv,temp.paras,argc);
+          Environ * localVar = inEnv->extendEnv(inEnv,temp.paras,argc); // 放入LocalVariable去定義
           for( int i = 0 ; i < temp.Slist.size() ; i++ ){ // 4/7pj3第三題 忘記了lambda只回傳最後了
               if( i == temp.Slist.size()-1 ){
                 Sexp tempArgment = evaluting( localVar, temp.Slist[temp.Slist.size()-1] );
@@ -2190,6 +2169,7 @@ class Evaluate {
   
   
   
+
 
 
 int main(){
