@@ -1561,30 +1561,26 @@ class Environ{ //設計是這是變數的放置區，
       env[str] = arg;
     } // doTheDefine 
     
-    Sexp retrieveEnv( Sexp arg ){
+    Sexp retrieveEnv( Sexp arg, bool isLL ){
+      if( this->lambdaLayer == true )
+        isLL = true;
       if( env.find(arg.value) != env.end()   )
         return env[arg.value]; // 找到了返回環境
       else if( Parent != NULL ){ //沒找到找往global，parent往上找。
         // *********************************************************** 為了過命名衝突測資而改的(why!!)
         // int i = 0;
-        Environ *temp =  Parent;
-        if( lambdaLayer == true ) { // 現在是lambda層就找到有為止
-          while( temp -> Parent != NULL  ){ 
-            temp = temp->Parent;
-          } // while 
-
-          if( temp->env.find(arg.value) != temp->env.end()   )
-            return temp->env[arg.value]; // 找到了返回環境
-          else
-            throw Sexp(ERROR,"ERROR (unbound symbol) : " + arg.value); 
-          //如果沒有找到就要throw error了
-        } // if
-        
         // i++;
         // if( temp->env.find(arg.value) != temp->env.end() && (arg.value == "x3" ) && ( i == 1 )   )
         //   return temp->env[arg.value]; // 找到了返回環境
         // // *********************************************************** 更改的部分
-        return temp->retrieveEnv(arg);  
+        Environ *temp =  Parent;
+        if( isLL == true ) { // 現在是lambda層就找到有為止
+          while( temp -> Parent != NULL  ){ 
+            temp = temp->Parent;
+          } // while 
+        } // if
+        
+        return temp->retrieveEnv(arg, isLL);  
       } //else if
       else
         throw Sexp(ERROR,"ERROR (unbound symbol) : " + arg.value); 
@@ -1630,7 +1626,7 @@ class Evaluate {
                           || ss.type == FUNCTION  || ss.type == FUNCTION_LAMBDA  ) // 寫PROJECT 1以為這些也可以變形，難受了，不知道要不要FUNCTION
         return ss; 
       else if( ss.type == SYMBOL ){ //拿symbol，dot可能會有bug
-        return inEnv->retrieveEnv(ss);
+        return inEnv->retrieveEnv(ss,false);
       } // if
 
       else if( ss.type == LIST ){ // 這邊有特殊形式(ai說有)quote,define,lambda,set!,and,or,begin,if,cond,let的function不能先求值，剩下的就要傳參後傳值
@@ -1745,7 +1741,7 @@ class Evaluate {
 
           if( ss.Slist[1].type != SYMBOL )
             throw Sexp(ERROR,"ERROR (SET! format) : ", ss.Slist);
-          inEnv->retrieveEnv(ss.Slist[1]); // 看有沒有被綁定過，沒有會拋ERROR
+          inEnv->retrieveEnv(ss.Slist[1],false  ); // 看有沒有被綁定過，沒有會拋ERROR
 
           Sexp tempArgment = ss.Slist[2]; 
           ss.Slist[2] = evaluting( inEnv, ss.Slist[2]);
@@ -2207,9 +2203,9 @@ int main(){
       cout << endl << "> ";
       parser.startParsing();
       evaluate.setSexp(parser.getSexp());
-      if( utestnum == 2){
-        break;
-      }
+      // if( utestnum == 3){
+      //   break;
+      // }
       // evaluate.project1(endsignal);
       evaluate.project2(globalglobal,endsignal);
       if ( endsignal == 1 )
