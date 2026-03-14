@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<section name="Workbench">
+	<section name="org.eclipse.ui.texteditor.FindReplaceDialog">
+		<item key="selection" value="define"/>
+		<item key="wrap" value="true"/>
+		<item key="casesensitive" value="false"/>
+		<item key="wholeword" value="false"/>
+		<item key="incremental" value="false"/>
+		<item key="isRegEx" value="false"/>
+		<list key="findhistory">
+			<item value="define"/>
+			<item value="rest_of_Identifier_started_basic_exp"/>
+			<item value="mIdentList"/>
+			<item value="boolean"/>
+			<item value="mTokenList"/>
+			<item value="false"/>
+			<item value="Formal_Parameter_List"/>
+			<item value="GoFormal_Parameter_List"/>
+			<item value="function_definition_without_ID"/>
+			<item value="rest_of_declarators"/>
+			<item value="Functions"/>
+			<item value="funs"/>
+			<item value="s_Fun"/>
+			<item value="compound_statement"/>
+			<item value="statement"/>
+		</list>
+		<list key="replacehistory">
+			<item value="mIdeL"/>
+			<item value="void"/>
+			<item value="mTL"/>
+			<item value=""/>
+			<item value="mError2 = true;"/>
+			<item value="mError2 = true"/>
+			<item value="FetchToken"/>
+			<item value="right"/>
+			<item value="RIGHT"/>
+			<item value=" ( char c )"/>
+			<item value="IsLetter"/>
+			<item value="IsNum"/>
+			<item value="IsSign"/>
+			<item value="IsBo"/>
+			<item value="IsSpace"/>
+		</list>
+	</section>
+	<section name="org.eclipse.ui.texteditor.FindReplaceDialog_dialogBounds">
+		<item key="DIALOG_X_ORIGIN" value="1414"/>
+		<item key="DIALOG_Y_ORIGIN" value="620"/>
+		<item key="DIALOG_WIDTH" value="350"/>
+		<item key="DIALOG_HEIGHT" value="419"/>
+		<item key="DIALOG_FONT_NAME" value="1|Microsoft JhengHei UI|9.0|0|WINDOWS|1|-15|0|0|0|400|0|0|0|1|0|0|0|0|Microsoft JhengHei UI"/>
+	</section>
+</section>

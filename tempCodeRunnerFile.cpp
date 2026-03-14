@@ -1,2 +1,0 @@
-      if( lambdaLayer == true)
-        return;

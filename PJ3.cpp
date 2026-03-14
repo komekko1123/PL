@@ -1036,7 +1036,7 @@ Sexp predictPair(const vector<Sexp> & selist  ){
 
 Sexp predictList(const vector<Sexp> & selist  ){
   if( selist.size() != 1 )
-    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : List?"); //
+    throw Sexp(ERROR,"ERROR (incorrect number of arguments) : list?"); //
   if( selist[0].type == LIST || selist[0].mtype == NIL ) //
     return Sexp(SYMBOL,T,"#t");
   else

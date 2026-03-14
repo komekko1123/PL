@@ -1,0 +1,7 @@
+# executables
+*.exe
+*.out
+
+# vscode
+.vscode/
+.eclipse-workspace/
